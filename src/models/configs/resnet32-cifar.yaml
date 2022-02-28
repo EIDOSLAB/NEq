@@ -1,0 +1,96 @@
+targets:
+  - bn_1
+  - stage_1.0.bn_a
+  - stage_1.0.bn_b
+  - stage_1.1.bn_a
+  - stage_1.1.bn_b
+  - stage_1.2.bn_a
+  - stage_1.2.bn_b
+  - stage_1.3.bn_a
+  - stage_1.3.bn_b
+  - stage_1.4.bn_a
+  - stage_1.4.bn_b
+  - stage_2.0.bn_a
+  - stage_2.0.bn_b
+  - stage_2.1.bn_a
+  - stage_2.1.bn_b
+  - stage_2.2.bn_a
+  - stage_2.2.bn_b
+  - stage_2.3.bn_a
+  - stage_2.3.bn_b
+  - stage_2.4.bn_a
+  - stage_2.4.bn_b
+  - stage_3.0.bn_a
+  - stage_3.0.bn_b
+  - stage_3.1.bn_a
+  - stage_3.1.bn_b
+  - stage_3.2.bn_a
+  - stage_3.2.bn_b
+  - stage_3.3.bn_a
+  - stage_3.3.bn_b
+  - stage_3.4.bn_a
+  - stage_3.4.bn_b
+
+bn-conv:
+  bn_1:
+    conv_1_3x3
+  stage_1.0.bn_a:
+    stage_1.0.conv_a
+  stage_1.0.bn_b:
+    stage_1.0.conv_b
+  stage_1.1.bn_a:
+    stage_1.1.conv_a
+  stage_1.1.bn_b:
+    stage_1.1.conv_b
+  stage_1.2.bn_a:
+    stage_1.2.conv_a
+  stage_1.2.bn_b:
+    stage_1.2.conv_b
+  stage_1.3.bn_a:
+    stage_1.3.conv_a
+  stage_1.3.bn_b:
+    stage_1.3.conv_b
+  stage_1.4.bn_a:
+    stage_1.4.conv_a
+  stage_1.4.bn_b:
+    stage_1.4.conv_b
+  stage_2.0.bn_a:
+    stage_2.0.conv_a
+  stage_2.0.bn_b:
+    stage_2.0.conv_b
+  stage_2.1.bn_a:
+    stage_2.1.conv_a
+  stage_2.1.bn_b:
+    stage_2.1.conv_b
+  stage_2.2.bn_a:
+    stage_2.2.conv_a
+  stage_2.2.bn_b:
+    stage_2.2.conv_b
+  stage_2.3.bn_a:
+    stage_2.3.conv_a
+  stage_2.3.bn_b:
+    stage_2.3.conv_b
+  stage_2.4.bn_a:
+    stage_2.4.conv_a
+  stage_2.4.bn_b:
+    stage_2.4.conv_b
+  stage_3.0.bn_a:
+    stage_3.0.conv_a
+  stage_3.0.bn_b:
+    stage_3.0.conv_b
+  stage_3.1.bn_a:
+    stage_3.1.conv_a
+  stage_3.1.bn_b:
+    stage_3.1.conv_b
+  stage_3.2.bn_a:
+    stage_3.2.conv_a
+  stage_3.2.bn_b:
+    stage_3.2.conv_b
+  stage_3.3.bn_a:
+    stage_3.3.conv_a
+  stage_3.3.bn_b:
+    stage_3.3.conv_b
+  stage_3.4.bn_a:
+    stage_3.4.conv_a
+  stage_3.4.bn_b:
+    stage_3.4.conv_b
