@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -62,29 +63,33 @@ def main(rank, config):
     if rank <= 0:
         wandb.init(project="zero-grad", config=config)
     
-    previous_activations = {}
+    previous_activations = 0
     grad_mask = {}
     
     # Train and test
     for epoch in range(config.epochs):
-        if epoch > 0:
+        if epoch > 0 and config.mask_gradients:
             run(config, model, valid_loader, None, scaler, device, arch_config, hooks)
             
             for k in hooks:
                 activation_delta = torch.abs(previous_activations[k] - hooks[k].get_mean_activation())
+                
+                hist = np.histogram(activation_delta.cpu().numpy(), bins=activation_delta.shape[0])
+                wandb.log({f"activations_{k}": wandb.Histogram(np_histogram=hist)})
+                
                 grad_mask[k] = torch.topk(activation_delta, k=int(config.topk * activation_delta.shape[0]),
                                           largest=False, sorted=False)[1]
                 hooks[k].reset()
-            
+        
         train = run(config, model, train_loader, optimizer, scaler, device, arch_config, grad_mask)
         for k in hooks:
             hooks[k].reset()
-            
+        
         valid = run(config, model, valid_loader, None, scaler, device, arch_config, grad_mask)
         for k in hooks:
             previous_activations[k] = hooks[k].get_mean_activation()
             hooks[k].reset()
-            
+        
         test = run(config, model, test_loader, None, scaler, device, arch_config, grad_mask)
         for k in hooks:
             hooks[k].reset()
@@ -116,6 +121,7 @@ if __name__ == '__main__':
     
     config.amp = int2bool(config.amp)
     config.mask_gradients = int2bool(config.mask_gradients)
+    config.ignore_zeroes = int2bool(config.ignore_zeroes)
     
     config.world_size = int(os.environ.get('WORLD_SIZE', 1))
     print(config)

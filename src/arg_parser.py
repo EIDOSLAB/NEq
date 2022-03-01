@@ -53,5 +53,7 @@ def get_parser():
                         help="Perform gradient masking operations.")
     parser.add_argument("--topk", type=float, default=0.5,
                         help="Topk percentage of gradients to retain.")
+    parser.add_argument("--ignore-zeroes", type=int2bool, default=1,
+                        help="Ignore zero activations when evaluating the mean.")
     
     return parser

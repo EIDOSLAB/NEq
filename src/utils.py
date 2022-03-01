@@ -20,15 +20,20 @@ class Hook:
         self.output_sum = 0
         self.active_count = torch.zeros(module.weight.shape[0], device=config.device)
         
+        self.config = config
+        
         self.hook = module.register_forward_hook(self.hook_fn)
     
     def hook_fn(self, module: torch.nn.Module, input: torch.Tensor, output: torch.Tensor) -> None:
         relu_output = F.relu(output).mean(dim=(2, 3))
-        self.active_count += relu_output.bool().sum(dim=0)
-        self.output_sum = relu_output.sum(dim=0)
+        if self.config.ignore_zeroes:
+            self.active_count += relu_output.bool().sum(dim=0)
+        else:
+            self.active_count += relu_output.shape[0]
+        self.output_sum += relu_output.sum(dim=0)
     
     def get_mean_activation(self):
-        return self.output_sum / self.active_count
+        return self.output_sum / (self.active_count + 1e-20)
     
     def reset(self):
         self.output_sum = 0
