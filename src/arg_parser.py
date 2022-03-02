@@ -55,5 +55,7 @@ def get_parser():
                         help="Topk percentage of gradients to retain.")
     parser.add_argument("--ignore-zeroes", type=int2bool, default=1,
                         help="Ignore zero activations when evaluating the mean.")
+    parser.add_argument("--random-mask", type=int2bool, default=0,
+                        help="Apply a random gradient mask.")
     
     return parser

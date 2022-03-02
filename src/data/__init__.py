@@ -43,7 +43,7 @@ def get_data(config):
                                                        num_workers=config.num_workers, pin_memory=True,
                                                        persistent_workers=config.num_workers > 0)
         
-        valid_dataloader = torch.utils.data.DataLoader(validation, batch_size=config.batch_size, shuffle=True,
+        valid_dataloader = torch.utils.data.DataLoader(validation, batch_size=config.batch_size, shuffle=False,
                                                        num_workers=config.num_workers, pin_memory=True,
                                                        persistent_workers=config.num_workers > 0)
         

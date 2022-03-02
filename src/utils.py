@@ -54,13 +54,7 @@ def get_model(config):
     with open(f'models/configs/{config.arch}.yaml') as f:
         arch_config = yaml.load(f.read(), Loader=FullLoader)
     
-    hooks = {}
-    
-    for n, m in model.named_modules():
-        if n in arch_config["targets"]:
-            hooks[n] = Hook(config, n, m)
-    
-    return model, hooks, arch_config
+    return model, arch_config
 
 
 def set_seed(seed):

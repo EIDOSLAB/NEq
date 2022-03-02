@@ -1,18 +1,19 @@
 import os
+import random
 
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
-import wandb
 from filelock import FileLock
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import SGD
 from torch.optim.lr_scheduler import MultiStepLR
 
+import wandb
 from arg_parser import get_parser, int2bool
 from data import get_data
-from utils import set_seed, run, get_model
+from utils import set_seed, run, get_model, Hook
 
 
 def cleanup():
@@ -39,7 +40,7 @@ def main(rank, config):
         device = config.device
     
     # Get model
-    model, hooks, arch_config = get_model(config)
+    model, arch_config = get_model(config)
     model.to(device)
     
     if rank > -1:
@@ -63,36 +64,53 @@ def main(rank, config):
     if rank <= 0:
         wandb.init(project="zero-grad", config=config)
     
-    previous_activations = 0
+    pre_epoch_activations = {}
+    post_epoch_activations = {}
     grad_mask = {}
+    hooks = {}
+    
+    for n, m in model.named_modules():
+        if n in arch_config["targets"]:
+            hooks[n] = Hook(config, n, m)
+    
+    run(config, model, valid_loader, None, scaler, device, arch_config, grad_mask)
+    
+    for k in hooks:
+        pre_epoch_activations[k] = hooks[k].get_mean_activation()
+        hooks[k].close()
     
     # Train and test
     for epoch in range(config.epochs):
-        if epoch > 0 and config.mask_gradients:
-            run(config, model, valid_loader, None, scaler, device, arch_config, hooks)
+        if epoch > 0:
             
             for k in hooks:
-                activation_delta = torch.abs(previous_activations[k] - hooks[k].get_mean_activation())
+                activation_delta = torch.abs(pre_epoch_activations[k] - post_epoch_activations[k])
                 
                 hist = np.histogram(activation_delta.cpu().numpy(), bins=activation_delta.shape[0])
                 wandb.log({f"activations_{k}": wandb.Histogram(np_histogram=hist)})
                 
-                grad_mask[k] = torch.topk(activation_delta, k=int(config.topk * activation_delta.shape[0]),
+                grad_mask[k] = torch.topk(activation_delta, k=int((1 - config.topk) * activation_delta.shape[0]),
                                           largest=False, sorted=False)[1]
-                hooks[k].reset()
+                
+                if config.random_mask:
+                    grad_mask[k] = random.sample(range(0, activation_delta.shape[0]),
+                                                 int((1 - config.topk) * activation_delta.shape[0]))
+                
+                pre_epoch_activations[k] = post_epoch_activations[k]
         
-        train = run(config, model, train_loader, optimizer, scaler, device, arch_config, grad_mask)
-        for k in hooks:
-            hooks[k].reset()
+        # train = run(config, model, train_loader, optimizer, scaler, device, arch_config, grad_mask)
+        
+        for n, m in model.named_modules():
+            if n in arch_config["targets"]:
+                hooks[n] = Hook(config, n, m)
         
         valid = run(config, model, valid_loader, None, scaler, device, arch_config, grad_mask)
+        
         for k in hooks:
-            previous_activations[k] = hooks[k].get_mean_activation()
-            hooks[k].reset()
+            post_epoch_activations[k] = hooks[k].get_mean_activation()
+            hooks[k].close()
         
         test = run(config, model, test_loader, None, scaler, device, arch_config, grad_mask)
-        for k in hooks:
-            hooks[k].reset()
         
         if rank <= 0:
             wandb.log({
