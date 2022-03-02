@@ -76,7 +76,7 @@ def main(rank, config):
     run(config, model, valid_loader, None, scaler, device, arch_config, grad_mask)
     
     for k in hooks:
-        pre_epoch_activations[k] = hooks[k].get_mean_activation()
+        pre_epoch_activations[k] = hooks[k].get_samples_activation()
         hooks[k].close()
     
     # Train and test
@@ -84,7 +84,7 @@ def main(rank, config):
         if epoch > 0:
             
             for k in hooks:
-                activation_delta = torch.abs(pre_epoch_activations[k] - post_epoch_activations[k])
+                activation_delta = torch.mean(torch.abs(pre_epoch_activations[k] - post_epoch_activations[k]), dim=0)
                 
                 hist = np.histogram(activation_delta.cpu().numpy(), bins=activation_delta.shape[0])
                 wandb.log({f"activations_{k}": wandb.Histogram(np_histogram=hist)})
@@ -98,7 +98,7 @@ def main(rank, config):
                 
                 pre_epoch_activations[k] = post_epoch_activations[k]
         
-        # train = run(config, model, train_loader, optimizer, scaler, device, arch_config, grad_mask)
+        train = run(config, model, train_loader, optimizer, scaler, device, arch_config, grad_mask)
         
         for n, m in model.named_modules():
             if n in arch_config["targets"]:
@@ -107,7 +107,7 @@ def main(rank, config):
         valid = run(config, model, valid_loader, None, scaler, device, arch_config, grad_mask)
         
         for k in hooks:
-            post_epoch_activations[k] = hooks[k].get_mean_activation()
+            post_epoch_activations[k] = hooks[k].get_samples_activation()
             hooks[k].close()
         
         test = run(config, model, test_loader, None, scaler, device, arch_config, grad_mask)

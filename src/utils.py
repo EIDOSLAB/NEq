@@ -17,7 +17,7 @@ class Hook:
     def __init__(self, config, name, module) -> None:
         self.name = name
         self.module = module
-        self.output_sum = 0
+        self.samples_activation = []
         self.active_count = torch.zeros(module.weight.shape[0], device=config.device)
         
         self.config = config
@@ -25,19 +25,13 @@ class Hook:
         self.hook = module.register_forward_hook(self.hook_fn)
     
     def hook_fn(self, module: torch.nn.Module, input: torch.Tensor, output: torch.Tensor) -> None:
-        relu_output = F.relu(output).mean(dim=(2, 3))
-        if self.config.ignore_zeroes:
-            self.active_count += relu_output.bool().sum(dim=0)
-        else:
-            self.active_count += relu_output.shape[0]
-        self.output_sum += relu_output.sum(dim=0)
+        self.samples_activation.append(F.relu(output).mean(dim=(2, 3)))
     
-    def get_mean_activation(self):
-        return self.output_sum / (self.active_count + 1e-20)
+    def get_samples_activation(self):
+        return torch.cat(self.samples_activation)
     
     def reset(self):
-        self.output_sum = 0
-        self.active_count.mul_(0)
+        self.samples_activation = []
     
     def close(self) -> None:
         self.hook.remove()
