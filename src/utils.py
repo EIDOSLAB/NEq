@@ -1,5 +1,6 @@
 import os
 import random
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -25,7 +26,10 @@ class Hook:
         self.hook = module.register_forward_hook(self.hook_fn)
     
     def hook_fn(self, module: torch.nn.Module, input: torch.Tensor, output: torch.Tensor) -> None:
-        self.samples_activation.append(F.relu(output).mean(dim=(2, 3)))
+        if self.config.mask_mode == "per-sample":
+            self.samples_activation.append(F.relu(output).mean(dim=(2, 3)))
+        if self.config.mask_mode == "per-feature":
+            self.samples_activation.append(F.relu(output))
     
     def get_samples_activation(self):
         return torch.cat(self.samples_activation)
@@ -95,13 +99,20 @@ def run(config, model, dataloader, optimizer, scaler, device, arch_config, grad_
                     optimizer.zero_grad()
                     scaler.scale(loss).backward()
                     
-                    if config.mask_gradients:
-                        for k in grad_mask:
-                            zero_gradients(model, k.split("."), grad_mask[k])
-                            zero_gradients(model, arch_config["bn-conv"][k].split("."), grad_mask[k])
+                    for k in grad_mask:
+                        zero_gradients(model, k, grad_mask[k])
+                        zero_gradients(model, arch_config["bn-conv"][k], grad_mask[k])
+                    
+                    if config.rollback:
+                        pre_optim_state = deepcopy(model.state_dict())
                     
                     scaler.step(optimizer)
                     scaler.update()
+                    
+                    if config.rollback:
+                        for k in grad_mask:
+                            rollback_module(model, k, grad_mask[k], pre_optim_state)
+                            rollback_module(model, arch_config["bn-conv"][k], grad_mask[k], pre_optim_state)
         
         tot_loss += loss.item()
         outputs.append(output.detach().float())
@@ -120,6 +131,7 @@ def run(config, model, dataloader, optimizer, scaler, device, arch_config, grad_
 @torch.no_grad()
 def zero_gradients(model, name, mask):
     module = model
+    name = name.split(".")
     for idx, sub in enumerate(name):
         if idx < len(name):
             module = getattr(module, sub)
@@ -127,3 +139,16 @@ def zero_gradients(model, name, mask):
     module.weight.grad[mask] = 0.
     if getattr(module, "bias", None) is not None:
         module.bias.grad[mask] = 0.
+
+
+@torch.no_grad()
+def rollback_module(model, name, grad_mask, pre_optim_state):
+    module = model
+    splitted_name = name.split(".")
+    for idx, sub in enumerate(splitted_name):
+        if idx < len(splitted_name):
+            module = getattr(module, sub)
+    
+    module.weight[grad_mask] = pre_optim_state[f"{name}.weight"][grad_mask]
+    if getattr(module, "bias", None) is not None:
+        module.bias[grad_mask] = pre_optim_state[f"{name}.bias"][grad_mask]

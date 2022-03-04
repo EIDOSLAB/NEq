@@ -7,6 +7,7 @@ def int2bool(i):
     return i == 1
 
 
+# noinspection PyTypeChecker
 def get_parser():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
@@ -15,13 +16,13 @@ def get_parser():
                         help="Reproducibility seed.")
     parser.add_argument("--root", type=str, default="/data/classification",
                         help="Dataset root folder.")
-    parser.add_argument("--amp", type=int2bool, default=1,
+    parser.add_argument("--amp", type=int2bool, choices=[0, 1], default=True,
                         help="If True use torch.cuda.amp.")
     parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cuda",
                         help="Device type.")
     
     # Model
-    parser.add_argument("--arch", type=str, default="lenet5",
+    parser.add_argument("--arch", type=str, default="resnet32-cifar",
                         help="Architecture name.")
     
     # Train
@@ -35,11 +36,11 @@ def get_parser():
                         help="Optimizer learning rate.")
     parser.add_argument("--momentum", type=float, default=0.9,
                         help="Optimizer momentum.")
-    parser.add_argument("--weight-decay", type=float, default=0,
+    parser.add_argument("--weight-decay", type=float, default=1e-4,
                         help="Optimizer weight decay.")
     
     # Dataset
-    parser.add_argument("--dataset", type=str, choices=["mnist", "cifar10"], default="mnist",
+    parser.add_argument("--dataset", type=str, choices=["mnist", "cifar10"], default="cifar10",
                         help="Source dataset.")
     parser.add_argument("--num-workers", type=int, default=8,
                         help="Number of workers (threads) per process.")
@@ -49,13 +50,15 @@ def get_parser():
                         help="Validation size as portion of the whole train set.")
     
     # Pruning
-    parser.add_argument("--mask-gradients", type=int2bool, default=0,
-                        help="Perform gradient masking operations.")
+    parser.add_argument("--rollback", type=int2bool, choices=[0, 1], default=False,
+                        help="Rollback the weights update (removes momentum and wd effects).")
     parser.add_argument("--topk", type=float, default=0.5,
                         help="Topk percentage of gradients to retain.")
-    parser.add_argument("--ignore-zeroes", type=int2bool, default=1,
-                        help="Ignore zero activations when evaluating the mean.")
-    parser.add_argument("--random-mask", type=int2bool, default=0,
+    parser.add_argument("--random-mask", type=int2bool, choices=[0, 1], default=False,
                         help="Apply a random gradient mask.")
+    parser.add_argument("--mask-mode", type=str, choices=["per-sample", "per-feature"], default="per-sample",
+                        help="Mask evaluation mode.")
+    parser.add_argument("--delta-mode", type=str, choices=["difference", "cosine"], default="difference",
+                        help="How to evaluate activations deltas.")
     
     return parser

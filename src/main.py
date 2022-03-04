@@ -11,8 +11,9 @@ from torch.optim import SGD
 from torch.optim.lr_scheduler import MultiStepLR
 
 import wandb
-from arg_parser import get_parser, int2bool
+from arg_parser import get_parser
 from data import get_data
+from optim import MaskedSGD
 from utils import set_seed, run, get_model, Hook
 
 
@@ -84,17 +85,38 @@ def main(rank, config):
         if epoch > 0:
             
             for k in hooks:
-                activation_delta = torch.mean(torch.abs(pre_epoch_activations[k] - post_epoch_activations[k]), dim=0)
+                if config.delta_mode == "difference":
+                    activation_delta = torch.abs(pre_epoch_activations[k].float() - post_epoch_activations[k].float())
+                if config.delta_mode == "cosine":
+                    shape = pre_epoch_activations[k].shape
+                    activation_delta = 1 - torch.cosine_similarity(
+                        pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                        post_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                        dim=2
+                    )
+                if config.mask_mode == "per-sample":
+                    if config.delta_mode == "difference":
+                        mean_activation_delta = torch.mean(activation_delta, dim=0)
+                    elif config.delta_mode == "cosine":
+                        mean_activation_delta = torch.mean(activation_delta, dim=0)
+                elif config.mask_mode == "per-feature":
+                    if config.delta_mode == "difference":
+                        mean_activation_delta = torch.mean(activation_delta, dim=(0, 2, 3))
+                    elif config.delta_mode == "cosine":
+                        mean_activation_delta = torch.mean(activation_delta, dim=0)
                 
-                hist = np.histogram(activation_delta.cpu().numpy(), bins=activation_delta.shape[0])
-                wandb.log({f"activations_{k}": wandb.Histogram(np_histogram=hist)})
+                # hist = np.histogram(activation_delta.cpu().numpy(), bins=min(512, activation_delta.shape[0]))
+                # wandb.log({f"deltas_{k}": wandb.Histogram(np_histogram=hist)})
+                hist = np.histogram(mean_activation_delta.cpu().numpy(), bins=min(512, mean_activation_delta.shape[0]))
+                wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
                 
-                grad_mask[k] = torch.topk(activation_delta, k=int((1 - config.topk) * activation_delta.shape[0]),
-                                          largest=False, sorted=False)[1]
+                grad_mask[k] = torch.topk(mean_activation_delta,
+                                          k=int((1 - config.topk) * mean_activation_delta.shape[0]), largest=False,
+                                          sorted=False)[1]
                 
                 if config.random_mask:
-                    grad_mask[k] = random.sample(range(0, activation_delta.shape[0]),
-                                                 int((1 - config.topk) * activation_delta.shape[0]))
+                    grad_mask[k] = random.sample(range(0, mean_activation_delta.shape[0]),
+                                                 int((1 - config.topk) * mean_activation_delta.shape[0]))
                 
                 pre_epoch_activations[k] = post_epoch_activations[k]
         
@@ -136,10 +158,6 @@ def main(rank, config):
 
 if __name__ == '__main__':
     config = get_parser().parse_args()
-    
-    config.amp = int2bool(config.amp)
-    config.mask_gradients = int2bool(config.mask_gradients)
-    config.ignore_zeroes = int2bool(config.ignore_zeroes)
     
     config.world_size = int(os.environ.get('WORLD_SIZE', 1))
     print(config)
