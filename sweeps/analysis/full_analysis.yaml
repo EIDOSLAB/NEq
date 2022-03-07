@@ -34,13 +34,14 @@ parameters:
     values: [ 100 ]
   val-size:
     values: [ 0.1 ]
+
   rollback:
-    values: [ 0, 1 ]
+    values: [ "none", "manual", "optim" ]
   topk:
     values: [ 0.5, 0.1 ]
   random-mask:
-    values: [ 0 ]
+    values: [ 0, 1 ]
   mask-mode:
     values: [ "per-sample", "per-feature" ]
   delta-mode:
-    values: [ "cosine" ]
+    values: [ "difference", "cosine" ]

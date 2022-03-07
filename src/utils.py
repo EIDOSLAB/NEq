@@ -74,7 +74,7 @@ def topk_accuracy(outputs, labels, topk=1):
     return (correct / float(len(outputs))).cpu().item()
 
 
-def run(config, model, dataloader, optimizer, scaler, device, arch_config):
+def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
     train = optimizer is not None
     
     tot_loss = 0.
@@ -98,6 +98,15 @@ def run(config, model, dataloader, optimizer, scaler, device, arch_config):
                 if train:
                     optimizer.zero_grad()
                     scaler.scale(loss).backward()
+                    
+                    if config.rollback != "optim":
+                        if config.rollback == "manual":
+                            pre_optim_state = deepcopy(model.state_dict())
+                        for k in grad_mask:
+                            if config.rollback == "none":
+                                zero_gradients(model, k, grad_mask[k])
+                            if config.rollback == "manual":
+                                rollback_module(model, k, grad_mask[k], pre_optim_state)
                     
                     scaler.step(optimizer)
                     scaler.update()
@@ -126,12 +135,12 @@ def zero_gradients(model, name, mask):
 
 
 @torch.no_grad()
-def rollback_module(model, name, grad_mask, pre_optim_state):
+def rollback_module(model, name, mask, pre_optim_state):
     module = find_module_by_name(model, name)
     
-    module.weight[grad_mask] = pre_optim_state[f"{name}.weight"][grad_mask]
+    module.weight[mask] = pre_optim_state[f"{name}.weight"][mask]
     if getattr(module, "bias", None) is not None:
-        module.bias[grad_mask] = pre_optim_state[f"{name}.bias"][grad_mask]
+        module.bias[mask] = pre_optim_state[f"{name}.bias"][mask]
 
 
 @torch.no_grad()

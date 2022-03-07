@@ -16,7 +16,7 @@ def get_parser():
                         help="Reproducibility seed.")
     parser.add_argument("--root", type=str, default="/data/classification",
                         help="Dataset root folder.")
-    parser.add_argument("--amp", type=int2bool, choices=[0, 1], default=True,
+    parser.add_argument("--amp", type=int2bool, choices=[0, 1], default=0,
                         help="If True use torch.cuda.amp.")
     parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cuda",
                         help="Device type.")
@@ -50,11 +50,12 @@ def get_parser():
                         help="Validation size as portion of the whole train set.")
     
     # Pruning
-    parser.add_argument("--rollback", type=int2bool, choices=[0, 1], default=False,
-                        help="Rollback the weights update (removes momentum and wd effects).")
+    parser.add_argument("--rollback", type=str, choices=["none", "manual", "optim"], default="none",
+                        help="Rollback the weights update (removes momentum and wd effects)."
+                             "If `optim` also avoids momentum memorization for zeroed gradients")
     parser.add_argument("--topk", type=float, default=0.5,
                         help="Topk percentage of gradients to retain.")
-    parser.add_argument("--random-mask", type=int2bool, choices=[0, 1], default=False,
+    parser.add_argument("--random-mask", type=int2bool, choices=[0, 1], default=0,
                         help="Apply a random gradient mask.")
     parser.add_argument("--mask-mode", type=str, choices=["per-sample", "per-feature"], default="per-sample",
                         help="Mask evaluation mode.")
