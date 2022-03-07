@@ -7,7 +7,6 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from filelock import FileLock
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim import SGD
 from torch.optim.lr_scheduler import MultiStepLR
 
 import wandb
@@ -47,8 +46,10 @@ def main(rank, config):
     if rank > -1:
         model = DDP(model, device_ids=[rank], output_device=rank)
     
+    named_params = list(map(list, zip(*list(model.named_parameters()))))
     # Define optimizer and scheduler
-    optimizer = SGD(model.parameters(), lr=config.lr, weight_decay=config.weight_decay, momentum=config.momentum)
+    optimizer = MaskedSGD(named_params[1], names=named_params[0], lr=config.lr, weight_decay=config.weight_decay,
+                          momentum=config.momentum)
     scheduler = MultiStepLR(optimizer, milestones=[100, 150])
     
     # Create dataloaders
@@ -67,14 +68,13 @@ def main(rank, config):
     
     pre_epoch_activations = {}
     post_epoch_activations = {}
-    grad_mask = {}
     hooks = {}
     
     for n, m in model.named_modules():
         if n in arch_config["targets"]:
             hooks[n] = Hook(config, n, m)
     
-    run(config, model, valid_loader, None, scaler, device, arch_config, grad_mask)
+    run(config, model, valid_loader, None, scaler, device, arch_config)
     
     for k in hooks:
         pre_epoch_activations[k] = hooks[k].get_samples_activation()
@@ -82,57 +82,68 @@ def main(rank, config):
     
     # Train and test
     for epoch in range(config.epochs):
+        grad_mask = {}
+        optimizer.param_groups[0]["masks"] = grad_mask
+        
         if epoch > 0:
             
             for k in hooks:
-                if config.delta_mode == "difference":
-                    activation_delta = torch.abs(pre_epoch_activations[k].float() - post_epoch_activations[k].float())
-                if config.delta_mode == "cosine":
-                    shape = pre_epoch_activations[k].shape
-                    activation_delta = 1 - torch.cosine_similarity(
-                        pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                        post_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                        dim=2
-                    )
-                if config.mask_mode == "per-sample":
-                    if config.delta_mode == "difference":
-                        mean_activation_delta = torch.mean(activation_delta, dim=0)
-                    elif config.delta_mode == "cosine":
-                        mean_activation_delta = torch.mean(activation_delta, dim=0)
-                elif config.mask_mode == "per-feature":
-                    if config.delta_mode == "difference":
-                        mean_activation_delta = torch.mean(activation_delta, dim=(0, 2, 3))
-                    elif config.delta_mode == "cosine":
-                        mean_activation_delta = torch.mean(activation_delta, dim=0)
-                
-                # hist = np.histogram(activation_delta.cpu().numpy(), bins=min(512, activation_delta.shape[0]))
-                # wandb.log({f"deltas_{k}": wandb.Histogram(np_histogram=hist)})
-                hist = np.histogram(mean_activation_delta.cpu().numpy(), bins=min(512, mean_activation_delta.shape[0]))
-                wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
-                
-                grad_mask[k] = torch.topk(mean_activation_delta,
-                                          k=int((1 - config.topk) * mean_activation_delta.shape[0]), largest=False,
-                                          sorted=False)[1]
+                topk = int((1 - config.topk) * pre_epoch_activations[k].shape[1])
                 
                 if config.random_mask:
-                    grad_mask[k] = random.sample(range(0, mean_activation_delta.shape[0]),
-                                                 int((1 - config.topk) * mean_activation_delta.shape[0]))
+                    mask = random.sample(range(0, pre_epoch_activations[k].shape[1]), topk)
+                    grad_mask[k] = mask
+                    for attached in arch_config["bn-conv"][k]:
+                        grad_mask[attached] = mask
+                
+                else:
+                    if config.delta_mode == "difference":
+                        activation_delta = torch.abs(
+                            pre_epoch_activations[k].float() - post_epoch_activations[k].float())
+                    if config.delta_mode == "cosine":
+                        shape = pre_epoch_activations[k].shape
+                        activation_delta = 1 - torch.cosine_similarity(
+                            pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                            post_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                            dim=2
+                        )
+                    if config.mask_mode == "per-sample":
+                        if config.delta_mode == "difference":
+                            mean_activation_delta = torch.mean(activation_delta, dim=0)
+                        elif config.delta_mode == "cosine":
+                            mean_activation_delta = torch.mean(activation_delta, dim=0)
+                    elif config.mask_mode == "per-feature":
+                        if config.delta_mode == "difference":
+                            mean_activation_delta = torch.mean(activation_delta, dim=(0, 2, 3))
+                        elif config.delta_mode == "cosine":
+                            mean_activation_delta = torch.mean(activation_delta, dim=0)
+                    
+                    # hist = np.histogram(activation_delta.cpu().numpy(), bins=min(512, activation_delta.shape[0]))
+                    # wandb.log({f"deltas_{k}": wandb.Histogram(np_histogram=hist)})
+                    hist = np.histogram(mean_activation_delta.cpu().numpy(),
+                                        bins=min(512, mean_activation_delta.shape[0]))
+                    wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
+                    
+                    mask = torch.topk(mean_activation_delta, k=topk, largest=False, sorted=False)[1]
+                    grad_mask[k] = mask
+                    for attached in arch_config["bn-conv"][k]:
+                        grad_mask[attached] = mask
                 
                 pre_epoch_activations[k] = post_epoch_activations[k]
         
-        train = run(config, model, train_loader, optimizer, scaler, device, arch_config, grad_mask)
+        train = run(config, model, train_loader, optimizer, scaler, device, arch_config)
         
         for n, m in model.named_modules():
             if n in arch_config["targets"]:
                 hooks[n] = Hook(config, n, m)
         
-        valid = run(config, model, valid_loader, None, scaler, device, arch_config, grad_mask)
+        valid = run(config, model, valid_loader, None, scaler, device, arch_config)
         
         for k in hooks:
             post_epoch_activations[k] = hooks[k].get_samples_activation()
             hooks[k].close()
         
-        test = run(config, model, test_loader, None, scaler, device, arch_config, grad_mask)
+        test = run(config, model, test_loader, None, scaler, device, arch_config)
         
         if rank <= 0:
             wandb.log({

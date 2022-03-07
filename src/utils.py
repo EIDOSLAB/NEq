@@ -74,7 +74,7 @@ def topk_accuracy(outputs, labels, topk=1):
     return (correct / float(len(outputs))).cpu().item()
 
 
-def run(config, model, dataloader, optimizer, scaler, device, arch_config, grad_mask):
+def run(config, model, dataloader, optimizer, scaler, device, arch_config):
     train = optimizer is not None
     
     tot_loss = 0.
@@ -99,20 +99,8 @@ def run(config, model, dataloader, optimizer, scaler, device, arch_config, grad_
                     optimizer.zero_grad()
                     scaler.scale(loss).backward()
                     
-                    for k in grad_mask:
-                        zero_gradients(model, k, grad_mask[k])
-                        zero_gradients(model, arch_config["bn-conv"][k], grad_mask[k])
-                    
-                    if config.rollback:
-                        pre_optim_state = deepcopy(model.state_dict())
-                    
                     scaler.step(optimizer)
                     scaler.update()
-                    
-                    if config.rollback:
-                        for k in grad_mask:
-                            rollback_module(model, k, grad_mask[k], pre_optim_state)
-                            rollback_module(model, arch_config["bn-conv"][k], grad_mask[k], pre_optim_state)
         
         tot_loss += loss.item()
         outputs.append(output.detach().float())
@@ -130,11 +118,7 @@ def run(config, model, dataloader, optimizer, scaler, device, arch_config, grad_
 
 @torch.no_grad()
 def zero_gradients(model, name, mask):
-    module = model
-    name = name.split(".")
-    for idx, sub in enumerate(name):
-        if idx < len(name):
-            module = getattr(module, sub)
+    module = find_module_by_name(model, name)
     
     module.weight.grad[mask] = 0.
     if getattr(module, "bias", None) is not None:
@@ -143,12 +127,19 @@ def zero_gradients(model, name, mask):
 
 @torch.no_grad()
 def rollback_module(model, name, grad_mask, pre_optim_state):
+    module = find_module_by_name(model, name)
+    
+    module.weight[grad_mask] = pre_optim_state[f"{name}.weight"][grad_mask]
+    if getattr(module, "bias", None) is not None:
+        module.bias[grad_mask] = pre_optim_state[f"{name}.bias"][grad_mask]
+
+
+@torch.no_grad()
+def find_module_by_name(model, name):
     module = model
     splitted_name = name.split(".")
     for idx, sub in enumerate(splitted_name):
         if idx < len(splitted_name):
             module = getattr(module, sub)
     
-    module.weight[grad_mask] = pre_optim_state[f"{name}.weight"][grad_mask]
-    if getattr(module, "bias", None) is not None:
-        module.bias[grad_mask] = pre_optim_state[f"{name}.bias"][grad_mask]
+    return module
