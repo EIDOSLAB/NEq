@@ -99,17 +99,18 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
                     optimizer.zero_grad()
                     scaler.scale(loss).backward()
                     
-                    if config.rollback != "optim":
-                        if config.rollback == "manual":
-                            pre_optim_state = deepcopy(model.state_dict())
+                    if config.rollback == "manual":
+                        pre_optim_state = deepcopy(model.state_dict())
+                    elif config.rollback == "none":
                         for k in grad_mask:
-                            if config.rollback == "none":
-                                zero_gradients(model, k, grad_mask[k])
-                            if config.rollback == "manual":
-                                rollback_module(model, k, grad_mask[k], pre_optim_state)
+                            zero_gradients(model, k, grad_mask[k])
                     
                     scaler.step(optimizer)
                     scaler.update()
+                    
+                    if config.rollback == "manual":
+                        for k in grad_mask:
+                            rollback_module(model, k, grad_mask[k], pre_optim_state)
         
         tot_loss += loss.item()
         outputs.append(output.detach().float())
