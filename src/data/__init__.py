@@ -4,9 +4,30 @@ import numpy as np
 import torch.utils.data
 import torchvision
 from torch import Generator
-from torch.utils.data import random_split
+from torch.utils.data import random_split, Dataset
 
 from data.transforms import T
+
+
+class MapDataset(Dataset):
+    """Given a dataset, creates a dataset which applies a mapping function to its items (lazily, only when an item is called).
+
+    Note that data is not cloned/copied from the initial dataset.
+
+    Args:
+        dataset:
+        map_fn:
+    """
+    
+    def __init__(self, dataset, map_fn):
+        self.dataset = dataset
+        self.map = map_fn
+    
+    def __getitem__(self, index):
+        return self.map(self.dataset[index][0]), self.dataset[index][1]
+    
+    def __len__(self):
+        return len(self.dataset)
 
 
 def split_dataset(dataset: torch.utils.data.Dataset, percentage: float, random_seed: int = 0) -> Tuple[
@@ -36,8 +57,10 @@ def split_dataset(dataset: torch.utils.data.Dataset, percentage: float, random_s
 
 def get_data(config):
     if config.dataset == "mnist":
-        train_dataset = torchvision.datasets.MNIST(config.root, train=True, transform=T["mnist"][0], download=True)
+        train_dataset = torchvision.datasets.MNIST(config.root, train=True, transform=None, download=True)
         train, validation = split_dataset(train_dataset, config.val_size)
+        
+        train, validation = MapDataset(train, T["mnist"][0]), MapDataset(validation, T["mnist"][1])
         
         train_dataloader = torch.utils.data.DataLoader(train, batch_size=config.batch_size, shuffle=True,
                                                        num_workers=config.num_workers, pin_memory=True,
@@ -49,24 +72,26 @@ def get_data(config):
         
         test_dataset = torchvision.datasets.MNIST(config.root, train=False, transform=T["mnist"][1], download=True)
         
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True,
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False,
                                                       num_workers=config.num_workers, pin_memory=True,
                                                       persistent_workers=config.num_workers > 0)
     elif config.dataset == "cifar10":
-        train_dataset = torchvision.datasets.CIFAR10(config.root, train=True, transform=T["cifar10"][0], download=True)
+        train_dataset = torchvision.datasets.CIFAR10(config.root, train=True, transform=None, download=True)
         train, validation = split_dataset(train_dataset, config.val_size)
+        
+        train, validation = MapDataset(train, T["cifar10"][0]), MapDataset(validation, T["cifar10"][1])
         
         train_dataloader = torch.utils.data.DataLoader(train, batch_size=config.batch_size, shuffle=True,
                                                        num_workers=config.num_workers, pin_memory=True,
                                                        persistent_workers=config.num_workers > 0)
         
-        valid_dataloader = torch.utils.data.DataLoader(validation, batch_size=config.batch_size, shuffle=True,
+        valid_dataloader = torch.utils.data.DataLoader(validation, batch_size=config.batch_size, shuffle=False,
                                                        num_workers=config.num_workers, pin_memory=True,
                                                        persistent_workers=config.num_workers > 0)
         
         test_dataset = torchvision.datasets.CIFAR10(config.root, train=False, transform=T["cifar10"][1], download=True)
         
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=True,
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False,
                                                       num_workers=config.num_workers, pin_memory=True,
                                                       persistent_workers=config.num_workers > 0)
     
