@@ -28,14 +28,35 @@ def setup(rank, world_size):
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 
+def cosine_similarity(x1, x2, dim, eps=1e-8):
+    x1_squared_norm = torch.pow(x1, 2).sum(dim=dim, keepdim=True)
+    x2_squared_norm = torch.pow(x2, 2).sum(dim=dim, keepdim=True)
+    
+    x1_squared_norm.clamp_min_(eps)
+    x2_squared_norm.clamp_min_(eps)
+    
+    x1_norm = x1_squared_norm.sqrt_()
+    x2_norm = x2_squared_norm.sqrt_()
+    
+    x1_normalized = x1.div(x1_norm)
+    x2_normalized = x2.div(x2_norm)
+
+    mask_1 = (x1_norm.sum(dim=dim) == 0) * (x2_norm.sum(dim=dim) == 0)  # force cosine similarity to 1
+    mask_2 = (x1_norm.sum(dim=dim) != 0) * (x2_norm.sum(dim=dim) != 0)  # normal cosine comp
+    
+    cos_sim_value = torch.sum(x1_normalized * x2_normalized, dim=dim)
+    
+    return mask_1 * cos_sim_value + mask_2
+
+
 def evaluate_mask(k, pre_epoch_activations, post_epoch_activations, topk, grad_mask, arch_config):
     if config.delta_mode == "difference":
         activation_delta = torch.abs(pre_epoch_activations[k].float() - post_epoch_activations[k].float())
     if config.delta_mode == "cosine":
         shape = pre_epoch_activations[k].shape
-        activation_delta = 1 - torch.cosine_similarity(pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                                                       post_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                                                       dim=2)
+        activation_delta = 1 - cosine_similarity(pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                                                 post_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                                                 dim=2)
     
     if config.mask_mode == "per-sample":
         mean_activation_delta = torch.mean(activation_delta, dim=0)
@@ -112,6 +133,8 @@ def main(rank, config):
     for k in hooks:
         pre_epoch_activations[k] = hooks[k].get_samples_activation()
         hooks[k].close()
+    
+    train, valid, test = {}, {}, {}
     
     # Train and test
     for epoch in range(config.epochs):
