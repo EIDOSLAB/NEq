@@ -3,7 +3,9 @@ from torch.optim import Optimizer
 
 
 class MaskedSGD(Optimizer):
-    def __init__(self, params, names, lr, masks={}, momentum=0, dampening=0, weight_decay=0, nesterov=False):
+    def __init__(self, params, names, lr, masks=None, momentum=0, dampening=0, weight_decay=0, nesterov=False):
+        if masks is None:
+            masks = {}
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if momentum < 0.0:

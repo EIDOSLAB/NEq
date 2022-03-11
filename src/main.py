@@ -165,10 +165,10 @@ def main(rank, config):
     for epoch in range(config.epochs):
         # Do this only if we freeze some neurons
         if config.topk < 1:
+            grad_mask = {}
             # If we use the MaskedSGD optimizer we set the replace the mask used in the last epoch with an empty one.
             # It will be filled later
             if config.rollback == "optim":
-                grad_mask = {}
                 optimizer.param_groups[0]["masks"] = grad_mask
             
             # Get the neurons masks
