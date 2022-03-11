@@ -149,15 +149,17 @@ def main(rank, config):
     hooks = {}
     
     # Get the activations for "epoch" -1
-    for n, m in model.named_modules():
-        if n in arch_config["targets"]:
-            hooks[n] = Hook(config, n, m)
+    if config.topk < 1:
+        for n, m in model.named_modules():
+            if n in arch_config["targets"]:
+                hooks[n] = Hook(config, n, m)
     
     run(config, model, valid_loader, None, scaler, device, arch_config)
-    
-    for k in hooks:
-        pre_epoch_activations[k] = hooks[k].get_samples_activation()
-        hooks[k].close()
+
+    if config.topk < 1:
+        for k in hooks:
+            pre_epoch_activations[k] = hooks[k].get_samples_activation()
+            hooks[k].close()
     
     train, valid, test = {}, {}, {}
     
@@ -191,15 +193,17 @@ def main(rank, config):
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the activations values for the current epoch (after the train step)
-        for n, m in model.named_modules():
-            if n in arch_config["targets"]:
-                hooks[n] = Hook(config, n, m)
+        if config.topk < 1:
+            for n, m in model.named_modules():
+                if n in arch_config["targets"]:
+                    hooks[n] = Hook(config, n, m)
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
-        
-        for k in hooks:
-            post_epoch_activations[k] = hooks[k].get_samples_activation()
-            hooks[k].close()
+
+        if config.topk < 1:
+            for k in hooks:
+                post_epoch_activations[k] = hooks[k].get_samples_activation()
+                hooks[k].close()
         
         # Test step
         test = run(config, model, test_loader, None, scaler, device, grad_mask)
