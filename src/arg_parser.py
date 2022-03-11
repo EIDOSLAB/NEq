@@ -61,5 +61,9 @@ def get_parser():
                         help="Mask evaluation mode.")
     parser.add_argument("--delta-mode", type=str, choices=["difference", "cosine"], default="difference",
                         help="How to evaluate activations deltas.")
+    parser.add_argument("--reduction", type=str, choices=["mean", "max"], default="mean",
+                        help="Delta reduction on the sample dimension.")
+    parser.add_argument("--warmup", type=int, default=1,
+                        help="How many warmup epochs.")
     
     return parser
