@@ -163,28 +163,29 @@ def main(rank, config):
     
     # Train and test
     for epoch in range(config.epochs):
-        grad_mask = {}
-        
-        # If we use the MaskedSGD optimizer we set the replace the mask used in the last epoch with an empty one.
-        # It will be filled later
-        if config.rollback == "optim":
-            optimizer.param_groups[0]["masks"] = grad_mask
-        
-        # Get the neurons masks
-        if len(post_epoch_activations):
-            for k in hooks:
-                # How many neurons to select as "to freeze" as percentage of the total number of neurons
-                topk = int((1 - config.topk) * pre_epoch_activations[k].shape[1])
-                
-                # Get the masks, either random or evaluated
-                if config.random_mask:
-                    get_random_mask(config, epoch, k, pre_epoch_activations, topk, grad_mask, arch_config)
-                else:
-                    evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations,
-                                  topk, grad_mask, arch_config)
-                
-                # Update the activations dictionary
-                pre_epoch_activations[k] = post_epoch_activations[k]
+        # Do this only if we freeze some neurons
+        if config.topk < 1:
+            # If we use the MaskedSGD optimizer we set the replace the mask used in the last epoch with an empty one.
+            # It will be filled later
+            if config.rollback == "optim":
+                grad_mask = {}
+                optimizer.param_groups[0]["masks"] = grad_mask
+            
+            # Get the neurons masks
+            if len(post_epoch_activations):
+                for k in hooks:
+                    # How many neurons to select as "to freeze" as percentage of the total number of neurons
+                    topk = int((1 - config.topk) * pre_epoch_activations[k].shape[1])
+                    
+                    # Get the masks, either random or evaluated
+                    if config.random_mask:
+                        get_random_mask(config, epoch, k, pre_epoch_activations, topk, grad_mask, arch_config)
+                    else:
+                        evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations,
+                                      topk, grad_mask, arch_config)
+                    
+                    # Update the activations dictionary
+                    pre_epoch_activations[k] = post_epoch_activations[k]
         
         # Train step
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
