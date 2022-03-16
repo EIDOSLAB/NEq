@@ -82,22 +82,34 @@ def evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activation
                                                  dim=2)
     
     reduced_activation_delta = reduce_delta(config, activation_delta)
-    
-    hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
-    wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
 
     # If the warmup epochs are over we can start evaluating the masks
     if epoch > (config.warmup - 1):
-        mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
+        if config.eps is not None:
+            mask = torch.where(reduced_activation_delta <= config.eps)[0]
+        else:
+            # How many neurons to select as "to freeze" as percentage of the total number of neurons
+            topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
+            mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
+            
         grad_mask[k] = mask
         for attached in arch_config["bn-conv"][k]:
             grad_mask[attached] = mask
+    else:
+        mask = torch.tensor([])
+
+    wandb.log({f"frozen_neurons_perc_{k}": mask.shape[0] / reduced_activation_delta.shape[0] * 100})
+    
+    hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
+    wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
 
 
 def get_random_mask(config, epoch, k, pre_epoch_activations, topk, grad_mask, arch_config):
 
     # If the warmup epochs are over we can start evaluating the masks
     if epoch > (config.warmup - 1):
+        # How many neurons to select as "to freeze" as percentage of the total number of neurons
+        topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
         mask = random.sample(range(0, pre_epoch_activations[k].shape[1]), topk)
         grad_mask[k] = mask
         for attached in arch_config["bn-conv"][k]:
@@ -149,24 +161,25 @@ def main(rank, config):
     hooks = {}
     
     # Get the activations for "epoch" -1
-    if config.topk < 1:
+    if isinstance(config.topk, str) or config.topk < 1:
         for n, m in model.named_modules():
             if n in arch_config["targets"]:
                 hooks[n] = Hook(config, n, m)
     
     run(config, model, valid_loader, None, scaler, device, arch_config)
 
-    if config.topk < 1:
+    if isinstance(config.topk, str) or config.topk < 1:
         for k in hooks:
             pre_epoch_activations[k] = hooks[k].get_samples_activation()
             hooks[k].close()
     
     train, valid, test = {}, {}, {}
+    grad_mask = {}
     
     # Train and test
     for epoch in range(config.epochs):
         # Do this only if we freeze some neurons
-        if config.topk < 1:
+        if isinstance(config.topk, str) or config.topk < 1:
             grad_mask = {}
             # If we use the MaskedSGD optimizer we set the replace the mask used in the last epoch with an empty one.
             # It will be filled later
@@ -175,32 +188,36 @@ def main(rank, config):
             
             # Get the neurons masks
             if len(post_epoch_activations):
+                total_neurons = 0
+                frozen_neurons = 0
                 for k in hooks:
-                    # How many neurons to select as "to freeze" as percentage of the total number of neurons
-                    topk = int((1 - config.topk) * pre_epoch_activations[k].shape[1])
-                    
                     # Get the masks, either random or evaluated
                     if config.random_mask:
-                        get_random_mask(config, epoch, k, pre_epoch_activations, topk, grad_mask, arch_config)
+                        get_random_mask(config, epoch, k, pre_epoch_activations, config.topk, grad_mask, arch_config)
                     else:
                         evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations,
-                                      topk, grad_mask, arch_config)
+                                      config.topk, grad_mask, arch_config)
+
+                    total_neurons += pre_epoch_activations[k].shape[1]
+                    frozen_neurons += grad_mask[k].shape[0]
                     
                     # Update the activations dictionary
                     pre_epoch_activations[k] = post_epoch_activations[k]
+
+                wandb.log({f"frozen_neurons_perc": frozen_neurons / total_neurons * 100})
         
         # Train step
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the activations values for the current epoch (after the train step)
-        if config.topk < 1:
+        if isinstance(config.topk, str) or config.topk < 1:
             for n, m in model.named_modules():
                 if n in arch_config["targets"]:
                     hooks[n] = Hook(config, n, m)
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
 
-        if config.topk < 1:
+        if isinstance(config.topk, str) or config.topk < 1:
             for k in hooks:
                 post_epoch_activations[k] = hooks[k].get_samples_activation()
                 hooks[k].close()
@@ -238,6 +255,11 @@ if __name__ == '__main__':
         config.amp = int2bool(config.amp)
     if isinstance(config.random_mask, int):
         config.random_mask = int2bool(config.random_mask)
+        
+    if config.eps == "none":
+        config.eps = "-"
+    else:
+        config.topk = "-"
     
     config.world_size = int(os.environ.get('WORLD_SIZE', 1))
     print(config)

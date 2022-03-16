@@ -7,6 +7,13 @@ def int2bool(i):
     return i == 1
 
 
+def evaleps(i):
+    if i == "none":
+        return None
+    else:
+        return float(i)
+
+
 # noinspection PyTypeChecker
 def get_parser():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -54,7 +61,7 @@ def get_parser():
                         help="Rollback the weights update (removes momentum and wd effects)."
                              "If `optim` also avoids momentum memorization for zeroed gradients")
     parser.add_argument("--topk", type=float, default=0.5,
-                        help="Topk percentage of gradients to retain.")
+                        help="Topk percentage of gradients to retain. Ignored if eps is not `none`.")
     parser.add_argument("--random-mask", type=int2bool, choices=[0, 1], default=0,
                         help="Apply a random gradient mask.")
     parser.add_argument("--mask-mode", type=str, choices=["per-sample", "per-feature"], default="per-sample",
@@ -65,5 +72,7 @@ def get_parser():
                         help="Delta reduction on the sample dimension.")
     parser.add_argument("--warmup", type=int, default=1,
                         help="How many warmup epochs.")
+    parser.add_argument("--eps", type=evaleps, default="none",
+                        help="Epsilon. `none` or float. If `none`, topk will be used to define the grad mask")
     
     return parser
