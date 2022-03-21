@@ -1,5 +1,6 @@
 import os
 import random
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -77,35 +78,48 @@ def evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activation
         activation_delta = torch.abs(pre_epoch_activations[k].float() - post_epoch_activations[k].float())
     if config.delta_mode == "cosine":
         shape = pre_epoch_activations[k].shape
-        activation_delta = 1 - cosine_similarity(pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                                                 post_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                                                 dim=2)
+        activation_delta = 1 - torch.abs(
+            cosine_similarity(pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                              post_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                              dim=2)
+        )
     
     reduced_activation_delta = reduce_delta(config, activation_delta)
-
+    
     # If the warmup epochs are over we can start evaluating the masks
     if epoch > (config.warmup - 1):
-        if config.eps is not None:
+        if config.eps != "-":
             mask = torch.where(reduced_activation_delta <= config.eps)[0]
+        elif config.binomial:
+            mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
         else:
             # How many neurons to select as "to freeze" as percentage of the total number of neurons
             topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
             mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
-            
-        grad_mask[k] = mask
-        for attached in arch_config["bn-conv"][k]:
-            grad_mask[attached] = mask
+        
+        if config.pinning and k in grad_mask:
+            # if "1.1.bn_a" in k:
+            #     print(k)
+            #     print(f"Mask {mask}")
+            #     print(f"GRAD Mask {grad_mask[k]}")
+            grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
+            # if "1.1.bn_a" in k:
+            #     print(f"CAT Mask {grad_mask[k]}")
+            for attached in arch_config["bn-conv"][k]:
+                grad_mask[attached] = torch.cat([grad_mask[attached].long(), mask.long()]).unique()
+        else:
+            grad_mask[k] = mask
+            for attached in arch_config["bn-conv"][k]:
+                grad_mask[attached] = mask
     else:
         mask = torch.tensor([])
-
-    wandb.log({f"frozen_neurons_perc_{k}": mask.shape[0] / reduced_activation_delta.shape[0] * 100})
+        # TODO should i put gradmask here?
     
     hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
     wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
 
 
 def get_random_mask(config, epoch, k, pre_epoch_activations, topk, grad_mask, arch_config):
-
     # If the warmup epochs are over we can start evaluating the masks
     if epoch > (config.warmup - 1):
         # How many neurons to select as "to freeze" as percentage of the total number of neurons
@@ -161,17 +175,19 @@ def main(rank, config):
     hooks = {}
     
     # Get the activations for "epoch" -1
-    if isinstance(config.topk, str) or config.topk < 1:
-        for n, m in model.named_modules():
-            if n in arch_config["targets"]:
-                hooks[n] = Hook(config, n, m)
     
-    run(config, model, valid_loader, None, scaler, device, arch_config)
-
-    if isinstance(config.topk, str) or config.topk < 1:
-        for k in hooks:
-            pre_epoch_activations[k] = hooks[k].get_samples_activation()
-            hooks[k].close()
+    for n, m in model.named_modules():
+        if n in arch_config["targets"]:
+            hooks[n] = Hook(config, n, m)
+    
+    valid = run(config, model, valid_loader, None, scaler, device, arch_config)
+    
+    best_valid_loss = valid["loss"]
+    best_model_state_dict = deepcopy(model.state_dict())
+    
+    for k in hooks:
+        pre_epoch_activations[k] = hooks[k].get_samples_activation()
+        hooks[k].close()
     
     train, valid, test = {}, {}, {}
     grad_mask = {}
@@ -179,48 +195,52 @@ def main(rank, config):
     # Train and test
     for epoch in range(config.epochs):
         # Do this only if we freeze some neurons
-        if isinstance(config.topk, str) or config.topk < 1:
+        if not config.pinning:
             grad_mask = {}
-            # If we use the MaskedSGD optimizer we set the replace the mask used in the last epoch with an empty one.
-            # It will be filled later
-            if config.rollback == "optim":
-                optimizer.param_groups[0]["masks"] = grad_mask
+        # If we use the MaskedSGD optimizer we replace the mask used in the last epoch with an empty one.
+        # It will be filled later
+        if config.rollback == "optim":
+            optimizer.param_groups[0]["masks"] = grad_mask
+        
+        # Get the neurons masks
+        if len(post_epoch_activations):
+            total_neurons = 0
+            frozen_neurons = 0
+            for k in hooks:
+                # Get the masks, either random or evaluated
+                if config.random_mask:
+                    get_random_mask(config, epoch, k, pre_epoch_activations, config.topk, grad_mask, arch_config)
+                else:
+                    evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations,
+                                  config.topk, grad_mask, arch_config)
+                
+                total_neurons += pre_epoch_activations[k].shape[1]
+                frozen_neurons += grad_mask[k].shape[0]
+                
+                wandb.log({f"frozen_neurons_perc_{k}": grad_mask[k].shape[0] / pre_epoch_activations[k].shape[1] * 100})
+                
+                # Update the activations dictionary
+                pre_epoch_activations[k] = post_epoch_activations[k]
             
-            # Get the neurons masks
-            if len(post_epoch_activations):
-                total_neurons = 0
-                frozen_neurons = 0
-                for k in hooks:
-                    # Get the masks, either random or evaluated
-                    if config.random_mask:
-                        get_random_mask(config, epoch, k, pre_epoch_activations, config.topk, grad_mask, arch_config)
-                    else:
-                        evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations,
-                                      config.topk, grad_mask, arch_config)
-
-                    total_neurons += pre_epoch_activations[k].shape[1]
-                    frozen_neurons += grad_mask[k].shape[0]
-                    
-                    # Update the activations dictionary
-                    pre_epoch_activations[k] = post_epoch_activations[k]
-
-                wandb.log({f"frozen_neurons_perc": frozen_neurons / total_neurons * 100})
+            wandb.log({f"frozen_neurons_perc": frozen_neurons / total_neurons * 100})
         
         # Train step
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the activations values for the current epoch (after the train step)
-        if isinstance(config.topk, str) or config.topk < 1:
-            for n, m in model.named_modules():
-                if n in arch_config["targets"]:
-                    hooks[n] = Hook(config, n, m)
+        for n, m in model.named_modules():
+            if n in arch_config["targets"]:
+                hooks[n] = Hook(config, n, m)
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
-
-        if isinstance(config.topk, str) or config.topk < 1:
-            for k in hooks:
-                post_epoch_activations[k] = hooks[k].get_samples_activation()
-                hooks[k].close()
+        
+        if valid["loss"] < best_valid_loss:
+            best_valid_loss = valid["loss"]
+            best_model_state_dict = deepcopy(model.state_dict())
+        
+        for k in hooks:
+            post_epoch_activations[k] = hooks[k].get_samples_activation()
+            hooks[k].close()
         
         # Test step
         test = run(config, model, test_loader, None, scaler, device, grad_mask)
@@ -236,6 +256,8 @@ def main(rank, config):
             })
         
         if scheduler is not None:
+            if ((epoch + 1) == 100) or ((epoch + 1) == 150):
+                model.load_state_dict(best_model_state_dict)
             scheduler.step()
         
         if rank > -1:
@@ -255,10 +277,14 @@ if __name__ == '__main__':
         config.amp = int2bool(config.amp)
     if isinstance(config.random_mask, int):
         config.random_mask = int2bool(config.random_mask)
-        
+    
     if config.eps == "none":
         config.eps = "-"
     else:
+        config.topk = "-"
+    
+    if config.binomial:
+        config.eps = "-"
         config.topk = "-"
     
     config.world_size = int(os.environ.get('WORLD_SIZE', 1))

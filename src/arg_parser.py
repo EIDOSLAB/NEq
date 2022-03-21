@@ -9,7 +9,7 @@ def int2bool(i):
 
 def evaleps(i):
     if i == "none":
-        return None
+        return "none"
     else:
         return float(i)
 
@@ -61,7 +61,7 @@ def get_parser():
                         help="Rollback the weights update (removes momentum and wd effects)."
                              "If `optim` also avoids momentum memorization for zeroed gradients")
     parser.add_argument("--topk", type=float, default=0.5,
-                        help="Topk percentage of gradients to retain. Ignored if eps is not `none`.")
+                        help="Topk percentage of gradients to retain. Ignored if eps is not `none`. Set to 1 for baseline")
     parser.add_argument("--random-mask", type=int2bool, choices=[0, 1], default=0,
                         help="Apply a random gradient mask.")
     parser.add_argument("--mask-mode", type=str, choices=["per-sample", "per-feature"], default="per-sample",
@@ -74,5 +74,9 @@ def get_parser():
                         help="How many warmup epochs.")
     parser.add_argument("--eps", type=evaleps, default="none",
                         help="Epsilon. `none` or float. If `none`, topk will be used to define the grad mask")
+    parser.add_argument("--binomial", type=int2bool, choices=[0, 1], default=0,
+                        help="Binomial for mask.")
+    parser.add_argument("--pinning", type=int2bool, choices=[0, 1], default=0,
+                        help="Pinning.")
     
     return parser
