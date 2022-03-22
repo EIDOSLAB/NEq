@@ -5,6 +5,8 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from tqdm import tqdm
 
+from utils import find_module_by_name
+
 
 def topk_accuracy(outputs, labels, topk=1):
     outputs = torch.softmax(outputs, dim=1)
@@ -30,17 +32,6 @@ def rollback_module(model, name, mask, pre_optim_state):
     module.weight[mask] = pre_optim_state[f"{name}.weight"][mask]
     if getattr(module, "bias", None) is not None:
         module.bias[mask] = pre_optim_state[f"{name}.bias"][mask]
-
-
-@torch.no_grad()
-def find_module_by_name(model, name):
-    module = model
-    splitted_name = name.split(".")
-    for idx, sub in enumerate(splitted_name):
-        if idx < len(splitted_name):
-            module = getattr(module, sub)
-    
-    return module
 
 
 def run(config, model, dataloader, optimizer, scaler, device, grad_mask):

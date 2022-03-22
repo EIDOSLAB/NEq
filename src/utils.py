@@ -60,8 +60,8 @@ def random_mask(k, pre_epoch_activations, topk, grad_mask, arch_config):
     mask = random.sample(range(0, pre_epoch_activations[k].shape[1]), topk)
     
     grad_mask[k] = mask
-    for attached in arch_config["bn-conv"][k]:
-        grad_mask[attached] = mask
+    # for attached in arch_config["bn-conv"][k]:
+    #     grad_mask[attached] = mask
 
 
 def evaluated_mask(config, k, pre_epoch_activations, post_epoch_activations, topk, grad_mask, arch_config):
@@ -78,12 +78,12 @@ def evaluated_mask(config, k, pre_epoch_activations, post_epoch_activations, top
     
     if config.pinning and k in grad_mask:
         grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
-        for attached in arch_config["bn-conv"][k]:
-            grad_mask[attached] = torch.cat([grad_mask[attached].long(), mask.long()]).unique()
+        # for attached in arch_config["bn-conv"][k]:
+        #     grad_mask[attached] = torch.cat([grad_mask[attached].long(), mask.long()]).unique()
     else:
         grad_mask[k] = mask
-        for attached in arch_config["bn-conv"][k]:
-            grad_mask[attached] = mask
+        # for attached in arch_config["bn-conv"][k]:
+        #     grad_mask[attached] = mask
     
     hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
     wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
@@ -145,3 +145,29 @@ def reduce_delta(config, activation_delta):
                 reduced_activation_delta = torch.max(activation_delta, dim=0)[0]
     
     return reduced_activation_delta
+
+
+@torch.no_grad()
+def find_module_by_name(model, name):
+    module = model
+    splitted_name = name.split(".")
+    for idx, sub in enumerate(splitted_name):
+        if idx < len(splitted_name):
+            module = getattr(module, sub)
+    
+    return module
+
+
+def log_masks(grad_mask, total_neurons):
+    frozen_neurons = 0
+    
+    for k in grad_mask:
+        frozen_neurons += grad_mask[k].shape[0]
+        
+        module = find_module_by_name(k)
+        
+        # Log the percentage of frozen neurons per layer
+        wandb.log({f"frozen_neurons_perc_{k}": grad_mask[k].shape[0] / module.weight.shape[0] * 100})
+    
+    # Log the total percentage of frozen neurons
+    wandb.log({f"frozen_neurons_perc": frozen_neurons / total_neurons * 100})

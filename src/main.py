@@ -14,7 +14,7 @@ from data import get_data
 from fit import run
 from models import get_model, attach_hooks
 from optim import MaskedSGD
-from utils import set_seed, setup, get_optimizer, cleanup, get_gradient_mask
+from utils import set_seed, setup, get_optimizer, cleanup, get_gradient_mask, log_masks
 
 
 def main(rank, config):
@@ -30,7 +30,7 @@ def main(rank, config):
         device = config.device
     
     # Get model
-    model, arch_config = get_model(config)
+    model, arch_config, total_neurons = get_model(config)
     model.to(device)
     
     # DDP for multi gpu
@@ -93,25 +93,17 @@ def main(rank, config):
         
         # Get the neurons masks
         if len(post_epoch_activations):
-            total_neurons = 0
-            frozen_neurons = 0
             
             for k in hooks:
                 # Get the masks, either random or evaluated
                 get_gradient_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask,
                                   arch_config)
                 
-                total_neurons += pre_epoch_activations[k].shape[1]
-                frozen_neurons += grad_mask[k].shape[0]
-                
-                # Log the percentage of frozen neurons per layer
-                wandb.log({f"frozen_neurons_perc_{k}": grad_mask[k].shape[0] / pre_epoch_activations[k].shape[1] * 100})
-                
                 # Update the activations dictionary
                 pre_epoch_activations[k] = post_epoch_activations[k]
             
-            # Log the total percentage of frozen neurons
-            wandb.log({f"frozen_neurons_perc": frozen_neurons / total_neurons * 100})
+            # Log the amount of frozen neurons
+            log_masks(grad_mask, total_neurons)
         
         # Train step
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
@@ -158,7 +150,7 @@ def main(rank, config):
                 print(f"Rollback to best_model_state_dict (epoch {best_epoch})")
                 model.load_state_dict(best_model_state_dict)
                 optimizer.load_state_dict(best_optim_state_dict)
-                
+            
             scheduler.step()
         
         if rank > -1:

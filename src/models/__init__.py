@@ -43,11 +43,22 @@ def get_model(config):
     
     with open(f'models/configs/{config.arch}.yaml') as f:
         arch_config = yaml.load(f.read(), Loader=FullLoader)
+        
+    total_neurons = 0
     
-    return model, arch_config
+    for m in model.modules():
+        if isinstance(m, nn.Linear):
+            total_neurons += m.weight.shape[0]
+        if isinstance(m, nn.Conv2d):
+            total_neurons += m.weight.shape[0]
+        if isinstance(m, nn.BatchNorm2d):
+            total_neurons += m.weight.shape[0]
+    
+    return model, arch_config, total_neurons
 
 
 def attach_hooks(config, model, hooks, arch_config):
     for n, m in model.named_modules():
-        if n in arch_config["targets"]:
+        # if n in arch_config["targets"]:
+        if isinstance(m, (nn.Conv2d, nn.BatchNorm2d)):
             hooks[n] = Hook(config, n, m)
