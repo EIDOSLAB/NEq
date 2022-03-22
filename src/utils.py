@@ -1,58 +1,13 @@
 import os
 import random
-from copy import deepcopy
 
 import numpy as np
 import torch
 import torch.distributed as dist
-import torch.nn.functional as F
-import yaml
-from tqdm import tqdm
-from yaml import FullLoader
+import wandb
+from torch.optim import Adam
 
-from models import LeNet5, resnet32
-
-
-class Hook:
-    
-    def __init__(self, config, name, module) -> None:
-        self.name = name
-        self.module = module
-        self.samples_activation = []
-        self.active_count = torch.zeros(module.weight.shape[0], device=config.device)
-        
-        self.config = config
-        
-        self.hook = module.register_forward_hook(self.hook_fn)
-    
-    def hook_fn(self, module: torch.nn.Module, input: torch.Tensor, output: torch.Tensor) -> None:
-        if self.config.mask_mode == "per-sample":
-            self.samples_activation.append(output.mean(dim=(2, 3)))
-        if self.config.mask_mode == "per-feature":
-            self.samples_activation.append(output)
-    
-    def get_samples_activation(self):
-        return torch.cat(self.samples_activation)
-    
-    def reset(self):
-        self.samples_activation = []
-    
-    def close(self) -> None:
-        self.hook.remove()
-
-
-def get_model(config):
-    if config.arch == "lenet5":
-        model = LeNet5()
-    elif config.arch == "resnet32-cifar":
-        model = resnet32()
-    else:
-        raise ValueError(f"No such model {config.arch}")
-    
-    with open(f'models/configs/{config.arch}.yaml') as f:
-        arch_config = yaml.load(f.read(), Loader=FullLoader)
-    
-    return model, arch_config
+from optim import MaskedSGD
 
 
 def set_seed(seed):
@@ -66,90 +21,123 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def topk_accuracy(outputs, labels, topk=1):
-    outputs = torch.softmax(outputs, dim=1)
-    _, preds = outputs.topk(topk, dim=1)
-    preds = preds.t()
-    correct = preds.eq(labels.view(1, -1).expand_as(preds)).sum()
-    return (correct / float(len(outputs))).cpu().item()
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = os.environ.get('MASTER_ADDR', 'localhost')
+    os.environ['MASTER_PORT'] = os.environ.get('MASTER_PORT', '12356')
+    
+    torch.cuda.set_device(rank)
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 
-def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
-    train = optimizer is not None
-    
-    tot_loss = 0.
-    outputs = []
-    targets = []
-    
-    model.train(train)
-    pbar = tqdm(dataloader, desc="Training" if train else "Testing",
-                disable=(dist.is_initialized() and dist.get_rank() > 0))
-    
-    for images, target in pbar:
-        images, target = images.to(device, non_blocking=True), \
-                         target.to(device, non_blocking=True)
-        
-        with torch.set_grad_enabled(train):
-            with torch.cuda.amp.autocast(enabled=(config.device == "cuda" and config.amp)):
-                output = model(images)
-                
-                loss = F.cross_entropy(output, target)
-                
-                if train:
-                    optimizer.zero_grad()
-                    scaler.scale(loss).backward()
-                    
-                    if config.rollback == "manual":
-                        pre_optim_state = deepcopy(model.state_dict())
-                    elif config.rollback == "none":
-                        for k in grad_mask:
-                            zero_gradients(model, k, grad_mask[k])
-                    
-                    scaler.step(optimizer)
-                    scaler.update()
-                    
-                    if config.rollback == "manual":
-                        for k in grad_mask:
-                            rollback_module(model, k, grad_mask[k], pre_optim_state)
-        
-        tot_loss += loss.item()
-        outputs.append(output.detach().float())
-        targets.append(target)
-    
-    outputs = torch.cat(outputs, dim=0)
-    targets = torch.cat(targets, dim=0)
-    
-    accs = {
-        'top1': topk_accuracy(outputs, targets, topk=1),
-        'top5': topk_accuracy(outputs, targets, topk=5)
-    }
-    return {'loss': tot_loss / len(dataloader.dataset), 'accuracy': accs}
+def cleanup():
+    dist.destroy_process_group()
 
 
-@torch.no_grad()
-def zero_gradients(model, name, mask):
-    module = find_module_by_name(model, name)
+def cosine_similarity(x1, x2, dim, eps=1e-8):
+    x1_squared_norm = torch.pow(x1, 2).sum(dim=dim, keepdim=True)
+    x2_squared_norm = torch.pow(x2, 2).sum(dim=dim, keepdim=True)
     
-    module.weight.grad[mask] = 0.
-    if getattr(module, "bias", None) is not None:
-        module.bias.grad[mask] = 0.
-
-
-@torch.no_grad()
-def rollback_module(model, name, mask, pre_optim_state):
-    module = find_module_by_name(model, name)
+    x1_squared_norm.clamp_min_(eps)
+    x2_squared_norm.clamp_min_(eps)
     
-    module.weight[mask] = pre_optim_state[f"{name}.weight"][mask]
-    if getattr(module, "bias", None) is not None:
-        module.bias[mask] = pre_optim_state[f"{name}.bias"][mask]
-
-
-@torch.no_grad()
-def find_module_by_name(model, name):
-    module = model
-    splitted_name = name.split(".")
-    for idx, sub in enumerate(splitted_name):
-        if idx < len(splitted_name):
-            module = getattr(module, sub)
+    x1_norm = x1_squared_norm.sqrt_()
+    x2_norm = x2_squared_norm.sqrt_()
     
-    return module
+    x1_normalized = x1.div(x1_norm)
+    x2_normalized = x2.div(x2_norm)
+    
+    mask_1 = (torch.abs(x1).sum(dim=dim) == 0) * (torch.abs(x2).sum(dim=dim) == 0)
+    mask_2 = (torch.abs(x1).sum(dim=dim) != 0) * (torch.abs(x2).sum(dim=dim) != 0)
+    
+    cos_sim_value = torch.sum(x1_normalized * x2_normalized, dim=dim)
+    
+    return mask_2 * cos_sim_value + mask_1
+
+
+def reduce_delta(config, activation_delta):
+    if config.mask_mode == "per-sample":
+        if config.reduction == "mean":
+            reduced_activation_delta = torch.mean(activation_delta, dim=0)
+        elif config.reduction == "max":
+            reduced_activation_delta = torch.max(activation_delta, dim=0)[0]
+    elif config.mask_mode == "per-feature":
+        if config.delta_mode == "difference":
+            if config.reduction == "mean":
+                reduced_activation_delta = torch.mean(activation_delta, dim=(0, 2, 3))
+            elif config.reduction == "max":
+                reduced_activation_delta = torch.max(activation_delta, dim=0)[0]
+        elif config.delta_mode == "cosine":
+            if config.reduction == "mean":
+                reduced_activation_delta = torch.mean(activation_delta, dim=0)
+            elif config.reduction == "max":
+                reduced_activation_delta = torch.max(activation_delta, dim=0)[0]
+    
+    return reduced_activation_delta
+
+
+def evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, topk, grad_mask, arch_config):
+    if config.delta_mode == "difference":
+        activation_delta = torch.abs(pre_epoch_activations[k].float() - post_epoch_activations[k].float())
+    if config.delta_mode == "cosine":
+        shape = pre_epoch_activations[k].shape
+        activation_delta = 1 - torch.abs(
+            cosine_similarity(pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                              post_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                              dim=2)
+        )
+    
+    reduced_activation_delta = reduce_delta(config, activation_delta)
+    
+    # If the warmup epochs are over we can start evaluating the masks
+    if epoch > (config.warmup - 1):
+        if config.eps != "-":
+            mask = torch.where(reduced_activation_delta <= config.eps)[0]
+        elif config.binomial:
+            mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
+        else:
+            # How many neurons to select as "to freeze" as percentage of the total number of neurons
+            topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
+            mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
+    else:
+        mask = torch.tensor([])
+
+    if config.pinning and k in grad_mask:
+        grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
+        for attached in arch_config["bn-conv"][k]:
+            grad_mask[attached] = torch.cat([grad_mask[attached].long(), mask.long()]).unique()
+    else:
+        grad_mask[k] = mask
+        for attached in arch_config["bn-conv"][k]:
+            grad_mask[attached] = mask
+    
+    hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
+    wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
+
+
+def get_random_mask(config, epoch, k, pre_epoch_activations, topk, grad_mask, arch_config):
+    # If the warmup epochs are over we can start evaluating the masks
+    if epoch > (config.warmup - 1):
+        # How many neurons to select as "to freeze" as percentage of the total number of neurons
+        topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
+        mask = random.sample(range(0, pre_epoch_activations[k].shape[1]), topk)
+        grad_mask[k] = mask
+        for attached in arch_config["bn-conv"][k]:
+            grad_mask[attached] = mask
+
+
+def get_optimizer(config, model):
+    # Define optimizer and scheduler
+    if config.optim == "sgd":
+        named_params = list(map(list, zip(*list(model.named_parameters()))))
+        return MaskedSGD(named_params[1], names=named_params[0], lr=config.lr, weight_decay=config.weight_decay,
+                         momentum=config.momentum)
+    if config.optim == "adam":
+        return Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
+
+def get_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask, arch_config):
+    if config.random_mask:
+        get_random_mask(config, epoch, k, pre_epoch_activations, config.topk, grad_mask, arch_config)
+    else:
+        evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations,
+                      config.topk, grad_mask, arch_config)

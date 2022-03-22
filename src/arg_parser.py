@@ -81,4 +81,16 @@ def get_parser():
     parser.add_argument("--rollback-model", type=int2bool, choices=[0, 1], default=0,
                         help="Rollback the model configuration before a decay step.")
     
-    return parser
+    config = parser.parse_args()
+    
+    # Just for peace of mind in the wandb table
+    if config.eps == "none":
+        config.eps = "-"
+    else:
+        config.topk = "-"
+    
+    if config.binomial:
+        config.eps = "-"
+        config.topk = "-"
+    
+    return config
