@@ -4,9 +4,9 @@ import random
 import numpy as np
 import torch
 import torch.distributed as dist
-import wandb
 from torch.optim import Adam
 
+import wandb
 from optim import MaskedSGD
 
 
@@ -31,6 +31,78 @@ def setup(rank, world_size):
 
 def cleanup():
     dist.destroy_process_group()
+
+
+def get_optimizer(config, model):
+    # Define optimizer and scheduler
+    if config.optim == "sgd":
+        named_params = list(map(list, zip(*list(model.named_parameters()))))
+        return MaskedSGD(named_params[1], names=named_params[0], lr=config.lr, weight_decay=config.weight_decay,
+                         momentum=config.momentum)
+    if config.optim == "adam":
+        return Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
+
+def get_gradient_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask, arch_config):
+    # If the warmup epochs are over we can start evaluating the masks
+    if epoch > (config.warmup - 1):
+        if config.random_mask:
+            random_mask(k, pre_epoch_activations, config.topk, grad_mask, arch_config)
+        else:
+            evaluated_mask(config, k, pre_epoch_activations, post_epoch_activations, config.topk, grad_mask,
+                           arch_config)
+
+
+def random_mask(k, pre_epoch_activations, topk, grad_mask, arch_config):
+    # How many neurons to select as "to freeze" as percentage of the total number of neurons
+    topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
+    
+    mask = random.sample(range(0, pre_epoch_activations[k].shape[1]), topk)
+    
+    grad_mask[k] = mask
+    for attached in arch_config["bn-conv"][k]:
+        grad_mask[attached] = mask
+
+
+def evaluated_mask(config, k, pre_epoch_activations, post_epoch_activations, topk, grad_mask, arch_config):
+    reduced_activation_delta = get_reduced_activation_delta(config, k, pre_epoch_activations, post_epoch_activations)
+    
+    if config.eps != "-":
+        mask = torch.where(reduced_activation_delta <= config.eps)[0]
+    elif config.binomial:
+        mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
+    else:
+        # How many neurons to select as "to freeze" as percentage of the total number of neurons
+        topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
+        mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
+    
+    if config.pinning and k in grad_mask:
+        grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
+        for attached in arch_config["bn-conv"][k]:
+            grad_mask[attached] = torch.cat([grad_mask[attached].long(), mask.long()]).unique()
+    else:
+        grad_mask[k] = mask
+        for attached in arch_config["bn-conv"][k]:
+            grad_mask[attached] = mask
+    
+    hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
+    wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
+
+
+def get_reduced_activation_delta(config, k, pre_epoch_activations, post_epoch_activations):
+    if config.delta_mode == "difference":
+        activation_delta = torch.abs(pre_epoch_activations[k].float() - post_epoch_activations[k].float())
+    if config.delta_mode == "cosine":
+        shape = pre_epoch_activations[k].shape
+        activation_delta = 1 - torch.abs(
+            cosine_similarity(
+                pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                post_epoch_activations[k].float().view(shape[0], shape[1], -1),
+                dim=2
+            )
+        )
+    
+    return reduce_delta(config, activation_delta)
 
 
 def cosine_similarity(x1, x2, dim, eps=1e-8):
@@ -73,71 +145,3 @@ def reduce_delta(config, activation_delta):
                 reduced_activation_delta = torch.max(activation_delta, dim=0)[0]
     
     return reduced_activation_delta
-
-
-def evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, topk, grad_mask, arch_config):
-    if config.delta_mode == "difference":
-        activation_delta = torch.abs(pre_epoch_activations[k].float() - post_epoch_activations[k].float())
-    if config.delta_mode == "cosine":
-        shape = pre_epoch_activations[k].shape
-        activation_delta = 1 - torch.abs(
-            cosine_similarity(pre_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                              post_epoch_activations[k].float().view(shape[0], shape[1], -1),
-                              dim=2)
-        )
-    
-    reduced_activation_delta = reduce_delta(config, activation_delta)
-    
-    # If the warmup epochs are over we can start evaluating the masks
-    if epoch > (config.warmup - 1):
-        if config.eps != "-":
-            mask = torch.where(reduced_activation_delta <= config.eps)[0]
-        elif config.binomial:
-            mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
-        else:
-            # How many neurons to select as "to freeze" as percentage of the total number of neurons
-            topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
-            mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
-    else:
-        mask = torch.tensor([])
-
-    if config.pinning and k in grad_mask:
-        grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
-        for attached in arch_config["bn-conv"][k]:
-            grad_mask[attached] = torch.cat([grad_mask[attached].long(), mask.long()]).unique()
-    else:
-        grad_mask[k] = mask
-        for attached in arch_config["bn-conv"][k]:
-            grad_mask[attached] = mask
-    
-    hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
-    wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
-
-
-def get_random_mask(config, epoch, k, pre_epoch_activations, topk, grad_mask, arch_config):
-    # If the warmup epochs are over we can start evaluating the masks
-    if epoch > (config.warmup - 1):
-        # How many neurons to select as "to freeze" as percentage of the total number of neurons
-        topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
-        mask = random.sample(range(0, pre_epoch_activations[k].shape[1]), topk)
-        grad_mask[k] = mask
-        for attached in arch_config["bn-conv"][k]:
-            grad_mask[attached] = mask
-
-
-def get_optimizer(config, model):
-    # Define optimizer and scheduler
-    if config.optim == "sgd":
-        named_params = list(map(list, zip(*list(model.named_parameters()))))
-        return MaskedSGD(named_params[1], names=named_params[0], lr=config.lr, weight_decay=config.weight_decay,
-                         momentum=config.momentum)
-    if config.optim == "adam":
-        return Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
-
-
-def get_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask, arch_config):
-    if config.random_mask:
-        get_random_mask(config, epoch, k, pre_epoch_activations, config.topk, grad_mask, arch_config)
-    else:
-        evaluate_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations,
-                      config.topk, grad_mask, arch_config)

@@ -13,11 +13,12 @@ from arg_parser import get_parser
 from data import get_data
 from fit import run
 from models import get_model, attach_hooks
-from utils import set_seed, setup, get_optimizer, cleanup, get_mask
+from optim import MaskedSGD
+from utils import set_seed, setup, get_optimizer, cleanup, get_gradient_mask
 
 
 def main(rank, config):
-    # Set reproducibility env
+    # Set reproducibility
     set_seed(config.seed)
     
     # Setup for multi gpu
@@ -51,73 +52,83 @@ def main(rank, config):
     if rank <= 0:
         wandb.init(project="zero-grad", config=config)
     
+    # Init dictionaries
     pre_epoch_activations = {}
     post_epoch_activations = {}
     hooks = {}
+    grad_mask = {}
     
-    # Get the activations for "epoch" -1
+    # Attach the hooks used to gather the PSP value
     attach_hooks(config, model, hooks, arch_config)
     
+    # First run on validation to get the PSP for epoch -1
     valid = run(config, model, valid_loader, None, scaler, device, arch_config)
     
+    # If we want to rollback the model config we save the first configuration
     if config.rollback_model:
         best_epoch = -1
         best_valid_loss = valid["loss"]
         best_model_state_dict = deepcopy(model.state_dict())
         best_optim_state_dict = deepcopy(optimizer.state_dict())
     
+    # Save the activations into the dict
     for k in hooks:
         pre_epoch_activations[k] = hooks[k].get_samples_activation()
         hooks[k].close()
     
-    train, valid, test = {}, {}, {}
-    grad_mask = {}
-    
+    # In case of DDP wait for all the processes before starting the training
     if rank > -1:
         dist.barrier()
     
-    # Train and test
+    # Epochs cycle
     for epoch in range(config.epochs):
-        # Do this only if we freeze some neurons
+        # If we do not want to pin the frozen neurons, we reinitialize the masks dict
         if not config.pinning:
             grad_mask = {}
+        
         # If we use the MaskedSGD optimizer we replace the mask used in the last epoch with an empty one.
         # It will be filled later
-        if config.rollback == "optim":
+        if config.rollback == "optim" and isinstance(optimizer, MaskedSGD):
             optimizer.param_groups[0]["masks"] = grad_mask
         
         # Get the neurons masks
         if len(post_epoch_activations):
             total_neurons = 0
             frozen_neurons = 0
+            
             for k in hooks:
                 # Get the masks, either random or evaluated
-                get_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask, arch_config)
+                get_gradient_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask,
+                                  arch_config)
                 
                 total_neurons += pre_epoch_activations[k].shape[1]
                 frozen_neurons += grad_mask[k].shape[0]
                 
+                # Log the percentage of frozen neurons per layer
                 wandb.log({f"frozen_neurons_perc_{k}": grad_mask[k].shape[0] / pre_epoch_activations[k].shape[1] * 100})
                 
                 # Update the activations dictionary
                 pre_epoch_activations[k] = post_epoch_activations[k]
             
+            # Log the total percentage of frozen neurons
             wandb.log({f"frozen_neurons_perc": frozen_neurons / total_neurons * 100})
         
         # Train step
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
-        # Gather the activations values for the current epoch (after the train step)
+        # Gather the PSP values for the current epoch (after the train step)
         attach_hooks(config, model, hooks, arch_config)
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
         
+        # If we want to rollback the model config we update the configuration if the loss improved
         if config.rollback_model and valid["loss"] < best_valid_loss:
             best_epoch = epoch
             best_valid_loss = valid["loss"]
             best_model_state_dict = deepcopy(model.state_dict())
             best_optim_state_dict = deepcopy(optimizer.state_dict())
         
+        # Save the activations into the dict
         for k in hooks:
             post_epoch_activations[k] = hooks[k].get_samples_activation()
             hooks[k].close()
@@ -134,17 +145,20 @@ def main(rank, config):
                 "epochs": epoch,
                 "lr":     optimizer.param_groups[0]["lr"]
             })
-        
+            
             print(f"Epoch\t {epoch}\n"
                   f"train\t {train}\n"
                   f"valid\t {valid}\n"
                   f"test\t {test}\n")
         
+        # Scheduler step
         if scheduler is not None:
+            # Rollback the model configuration
             if config.rollback_model and (((epoch + 1) == 100) or ((epoch + 1) == 150)):
                 print(f"Rollback to best_model_state_dict (epoch {best_epoch})")
                 model.load_state_dict(best_model_state_dict)
                 optimizer.load_state_dict(best_optim_state_dict)
+                
             scheduler.step()
         
         if rank > -1:
@@ -158,11 +172,14 @@ def main(rank, config):
 
 
 if __name__ == '__main__':
+    # Get config
     config = get_parser()
     
+    # Set WORLD_SIZE (given as env var) for multi-gpu training
     config.world_size = int(os.environ.get('WORLD_SIZE', 1))
     print(config)
     
+    # Call main()
     if config.world_size == 1:
         main(-1, config)
     else:
