@@ -78,5 +78,7 @@ def get_parser():
                         help="Binomial for mask.")
     parser.add_argument("--pinning", type=int2bool, choices=[0, 1], default=0,
                         help="Pinning.")
+    parser.add_argument("--rollback-model", type=int2bool, choices=[0, 1], default=0,
+                        help="Rollback the model configuration before a decay step.")
     
     return parser

@@ -181,10 +181,12 @@ def main(rank, config):
             hooks[n] = Hook(config, n, m)
     
     valid = run(config, model, valid_loader, None, scaler, device, arch_config)
-
-    best_epoch = -1
-    best_valid_loss = valid["loss"]
-    best_model_state_dict = deepcopy(model.state_dict())
+    
+    if config.rollback_model:
+        best_epoch = -1
+        best_valid_loss = valid["loss"]
+        best_model_state_dict = deepcopy(model.state_dict())
+        best_optim_state_dict = deepcopy(optimizer.state_dict())
     
     for k in hooks:
         pre_epoch_activations[k] = hooks[k].get_samples_activation()
@@ -235,10 +237,11 @@ def main(rank, config):
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
         
-        if valid["loss"] < best_valid_loss:
+        if config.rollback_model and valid["loss"] < best_valid_loss:
             best_epoch = epoch
             best_valid_loss = valid["loss"]
             best_model_state_dict = deepcopy(model.state_dict())
+            best_optim_state_dict = deepcopy(optimizer.state_dict())
         
         for k in hooks:
             post_epoch_activations[k] = hooks[k].get_samples_activation()
@@ -263,9 +266,10 @@ def main(rank, config):
               f"test\t {test}\n")
         
         if scheduler is not None:
-            if ((epoch + 1) == 100) or ((epoch + 1) == 150):
+            if config.rollback_model and (((epoch + 1) == 100) or ((epoch + 1) == 150)):
                 print(f"Rollback to best_model_state_dict (epoch {best_epoch})")
                 model.load_state_dict(best_model_state_dict)
+                optimizer.load_state_dict(best_optim_state_dict)
             scheduler.step()
         
         if rank > -1:
