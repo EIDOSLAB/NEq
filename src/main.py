@@ -56,7 +56,7 @@ def main(rank, config):
     hooks = {}
     
     # Get the activations for "epoch" -1
-    attach_hooks(config, model, hooks)
+    attach_hooks(config, model, hooks, arch_config)
     
     valid = run(config, model, valid_loader, None, scaler, device, arch_config)
     
@@ -108,7 +108,7 @@ def main(rank, config):
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the activations values for the current epoch (after the train step)
-        attach_hooks(config, model, hooks)
+        attach_hooks(config, model, hooks, arch_config)
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
         

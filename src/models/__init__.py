@@ -47,7 +47,7 @@ def get_model(config):
     return model, arch_config
 
 
-def attach_hooks(config, model, hooks):
+def attach_hooks(config, model, hooks, arch_config):
     for n, m in model.named_modules():
-        if isinstance(m, (nn.Conv2d, nn.BatchNorm2d)):
+        if n in arch_config["targets"]:
             hooks[n] = Hook(config, n, m)
