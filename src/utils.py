@@ -158,13 +158,13 @@ def find_module_by_name(model, name):
     return module
 
 
-def log_masks(grad_mask, total_neurons):
+def log_masks(model, grad_mask, total_neurons):
     frozen_neurons = 0
     
     for k in grad_mask:
         frozen_neurons += grad_mask[k].shape[0]
         
-        module = find_module_by_name(k)
+        module = find_module_by_name(model, k)
         
         # Log the percentage of frozen neurons per layer
         wandb.log({f"frozen_neurons_perc_{k}": grad_mask[k].shape[0] / module.weight.shape[0] * 100})

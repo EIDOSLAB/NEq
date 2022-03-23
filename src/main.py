@@ -103,7 +103,7 @@ def main(rank, config):
                 pre_epoch_activations[k] = post_epoch_activations[k]
             
             # Log the amount of frozen neurons
-            log_masks(grad_mask, total_neurons)
+            log_masks(model, grad_mask, total_neurons)
         
         # Train step
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
