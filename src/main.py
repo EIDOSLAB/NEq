@@ -13,7 +13,7 @@ from arg_parser import get_parser
 from data import get_data
 from fit import run
 from models import get_model, attach_hooks
-from optim import MaskedSGD
+from optim import MaskedSGD, MaskedAdam
 from utils import set_seed, setup, get_optimizer, cleanup, get_gradient_mask, log_masks, get_scheduler
 
 
@@ -92,7 +92,7 @@ def main(rank, config):
         
         # If we use the MaskedSGD optimizer we replace the mask used in the last epoch with an empty one.
         # It will be filled later
-        if config.rollback == "optim" and isinstance(optimizer, MaskedSGD):
+        if config.rollback == "optim" and isinstance(optimizer, (MaskedSGD, MaskedAdam)):
             optimizer.param_groups[0]["masks"] = grad_mask
         
         # Get the neurons masks

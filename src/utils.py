@@ -4,11 +4,10 @@ import random
 import numpy as np
 import torch
 import torch.distributed as dist
-from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 
 import wandb
-from optim import MaskedSGD
+from optim import MaskedSGD, MaskedAdam
 
 
 def set_seed(seed):
@@ -36,12 +35,12 @@ def cleanup():
 
 def get_optimizer(config, model):
     # Define optimizer and scheduler
+    named_params = list(map(list, zip(*list(model.named_parameters()))))
     if config.optim == "sgd":
-        named_params = list(map(list, zip(*list(model.named_parameters()))))
         return MaskedSGD(named_params[1], names=named_params[0], lr=config.lr, weight_decay=config.weight_decay,
                          momentum=config.momentum)
     if config.optim == "adam":
-        return Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+        return MaskedAdam(named_params[1], names=named_params[0], lr=config.lr, weight_decay=config.weight_decay)
 
 
 def get_scheduler(config, optimizer):
