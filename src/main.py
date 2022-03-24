@@ -5,8 +5,8 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from filelock import FileLock
+from torch import nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim.lr_scheduler import MultiStepLR
 
 import wandb
 from arg_parser import get_parser
@@ -14,7 +14,7 @@ from data import get_data
 from fit import run
 from models import get_model, attach_hooks
 from optim import MaskedSGD
-from utils import set_seed, setup, get_optimizer, cleanup, get_gradient_mask, log_masks
+from utils import set_seed, setup, get_optimizer, cleanup, get_gradient_mask, log_masks, get_scheduler
 
 
 def main(rank, config):
@@ -39,7 +39,7 @@ def main(rank, config):
     
     # Build optimizer and scheduler
     optimizer = get_optimizer(config, model)
-    scheduler = MultiStepLR(optimizer, milestones=[100, 150])
+    scheduler = get_scheduler(config, optimizer)
     
     # Create dataloaders
     with FileLock('data.lock'):
@@ -53,10 +53,14 @@ def main(rank, config):
         wandb.init(project="zero-grad", config=config)
     
     # Init dictionaries
+    hooks = {}
     pre_epoch_activations = {}
     post_epoch_activations = {}
-    hooks = {}
     grad_mask = {}
+    
+    frozen_neurons = {"total": 0,
+                      "layer": {f"{n}": 0 for n, m in model.named_modules() if
+                                isinstance(m, (nn.Conv2d, nn.BatchNorm2d))}}
     
     # Attach the hooks used to gather the PSP value
     attach_hooks(config, model, hooks, arch_config)
@@ -103,7 +107,7 @@ def main(rank, config):
                 pre_epoch_activations[k] = post_epoch_activations[k]
             
             # Log the amount of frozen neurons
-            log_masks(model, grad_mask, total_neurons)
+            frozen_neurons = log_masks(model, grad_mask, total_neurons)
         
         # Train step
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
@@ -131,11 +135,12 @@ def main(rank, config):
         # Logs
         if rank <= 0:
             wandb.log({
-                "train":  train,
-                "valid":  valid,
-                "test":   test,
-                "epochs": epoch,
-                "lr":     optimizer.param_groups[0]["lr"]
+                "frozen_neurons_perc": frozen_neurons,
+                "train":               train,
+                "valid":               valid,
+                "test":                test,
+                "epochs":              epoch,
+                "lr":                  optimizer.param_groups[0]["lr"]
             })
             
             print(f"Epoch\t {epoch}\n"

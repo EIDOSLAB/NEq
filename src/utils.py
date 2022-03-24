@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from torch.optim import Adam
+from torch.optim.lr_scheduler import MultiStepLR
 
 import wandb
 from optim import MaskedSGD
@@ -41,6 +42,11 @@ def get_optimizer(config, model):
                          momentum=config.momentum)
     if config.optim == "adam":
         return Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
+
+
+def get_scheduler(config, optimizer):
+    if config.dataset == "cifar10":
+        return MultiStepLR(optimizer, milestones=[100, 150])
 
 
 def get_gradient_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask, arch_config):
@@ -161,13 +167,16 @@ def find_module_by_name(model, name):
 def log_masks(model, grad_mask, total_neurons):
     frozen_neurons = 0
     
+    per_layer_frozen_neurons = {}
+    
     for k in grad_mask:
         frozen_neurons += grad_mask[k].shape[0]
         
         module = find_module_by_name(model, k)
         
         # Log the percentage of frozen neurons per layer
-        wandb.log({f"frozen_neurons_perc_{k}": grad_mask[k].shape[0] / module.weight.shape[0] * 100})
+        per_layer_frozen_neurons[f"{k}"] = grad_mask[k].shape[0] / module.weight.shape[0] * 100
     
     # Log the total percentage of frozen neurons
-    wandb.log({f"frozen_neurons_perc": frozen_neurons / total_neurons * 100})
+    return {"total": frozen_neurons / total_neurons * 100,
+            "layer": per_layer_frozen_neurons}
