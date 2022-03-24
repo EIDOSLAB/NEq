@@ -56,26 +56,7 @@ def split_dataset(dataset: torch.utils.data.Dataset, percentage: float, random_s
 
 
 def get_data(config):
-    if config.dataset == "mnist":
-        train_dataset = torchvision.datasets.MNIST(config.root, train=True, transform=None, download=True)
-        train, validation = split_dataset(train_dataset, config.val_size)
-        
-        train, validation = MapDataset(train, T["mnist"][0]), MapDataset(validation, T["mnist"][1])
-        
-        train_dataloader = torch.utils.data.DataLoader(train, batch_size=config.batch_size, shuffle=True,
-                                                       num_workers=config.num_workers, pin_memory=True,
-                                                       persistent_workers=config.num_workers > 0)
-        
-        valid_dataloader = torch.utils.data.DataLoader(validation, batch_size=config.batch_size, shuffle=False,
-                                                       num_workers=config.num_workers, pin_memory=True,
-                                                       persistent_workers=config.num_workers > 0)
-        
-        test_dataset = torchvision.datasets.MNIST(config.root, train=False, transform=T["mnist"][1], download=True)
-        
-        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False,
-                                                      num_workers=config.num_workers, pin_memory=True,
-                                                      persistent_workers=config.num_workers > 0)
-    elif config.dataset == "cifar10":
+    if config.dataset == "cifar10":
         train_dataset = torchvision.datasets.CIFAR10(config.root, train=True, transform=None, download=True)
         train, validation = split_dataset(train_dataset, config.val_size)
         
@@ -90,6 +71,25 @@ def get_data(config):
                                                        persistent_workers=config.num_workers > 0)
         
         test_dataset = torchvision.datasets.CIFAR10(config.root, train=False, transform=T["cifar10"][1], download=True)
+        
+        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False,
+                                                      num_workers=config.num_workers, pin_memory=True,
+                                                      persistent_workers=config.num_workers > 0)
+    elif config.dataset == "imagenet":
+        train_dataset = torchvision.datasets.ImageNet(config.root, split="train", transform=None)
+        train, validation = split_dataset(train_dataset, config.val_size)
+        
+        train, validation = MapDataset(train, T["imagenet"][0]), MapDataset(validation, T["imagenet"][1])
+        
+        train_dataloader = torch.utils.data.DataLoader(train, batch_size=config.batch_size, shuffle=True,
+                                                       num_workers=config.num_workers, pin_memory=True,
+                                                       persistent_workers=config.num_workers > 0)
+        
+        valid_dataloader = torch.utils.data.DataLoader(validation, batch_size=config.batch_size, shuffle=False,
+                                                       num_workers=config.num_workers, pin_memory=True,
+                                                       persistent_workers=config.num_workers > 0)
+        
+        test_dataset = torchvision.datasets.ImageNet(config.root, split="val", transform=T["imagenet"][1])
         
         test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=config.batch_size, shuffle=False,
                                                       num_workers=config.num_workers, pin_memory=True,

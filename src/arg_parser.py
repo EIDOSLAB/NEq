@@ -47,7 +47,7 @@ def get_parser():
                         help="Optimizer weight decay.")
     
     # Dataset
-    parser.add_argument("--dataset", type=str, choices=["mnist", "cifar10"], default="cifar10",
+    parser.add_argument("--dataset", type=str, choices=["cifar10", "imagenet"], default="cifar10",
                         help="Source dataset.")
     parser.add_argument("--num-workers", type=int, default=8,
                         help="Number of workers (threads) per process.")
