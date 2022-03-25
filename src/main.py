@@ -50,6 +50,7 @@ def main(rank, config):
     
     # Init wandb
     if rank <= 0:
+        print("Initialize wandb run")
         wandb.init(project="zero-grad", config=config)
     
     # Init dictionaries

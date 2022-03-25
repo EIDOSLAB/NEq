@@ -56,6 +56,8 @@ def split_dataset(dataset: torch.utils.data.Dataset, percentage: float, random_s
 
 
 def get_data(config):
+    print(f"Initialize dataset {config.dataset}")
+    
     if config.dataset == "cifar10":
         train_dataset = torchvision.datasets.CIFAR10(config.root, train=True, transform=None, download=True)
         train, validation = split_dataset(train_dataset, config.val_size)
@@ -97,5 +99,9 @@ def get_data(config):
     
     else:
         raise ValueError(f"No such dataset {config.dataset}")
+    
+    print(f"Train set length {len(train_dataloader)}")
+    print(f"Validation set length {len(valid_dataloader)}")
+    print(f"Test set length {len(test_dataloader)}")
     
     return train_dataloader, valid_dataloader, test_dataloader

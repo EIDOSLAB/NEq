@@ -45,7 +45,17 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
     pbar = tqdm(dataloader, desc="Training" if train else "Testing",
                 disable=(dist.is_initialized() and dist.get_rank() > 0))
     
-    for images, target in pbar:
+    if config.dataset == "cifar10":
+        target_bs = 100
+    elif config.dataset == "imagenet":
+        target_bs = 256
+
+    iters_to_accumulate = target_bs // config.batch_size
+    
+    if train:
+        optimizer.zero_grad()
+    
+    for batch, (images, target) in enumerate(pbar):
         images, target = images.to(device, non_blocking=True), \
                          target.to(device, non_blocking=True)
         
@@ -56,7 +66,6 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
                 loss = F.cross_entropy(output, target)
                 
                 if train:
-                    optimizer.zero_grad()
                     scaler.scale(loss).backward()
                     
                     if config.rollback == "manual":
@@ -64,9 +73,11 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
                     elif config.rollback == "none":
                         for k in grad_mask:
                             zero_gradients(model, k, grad_mask[k])
-                    
-                    scaler.step(optimizer)
-                    scaler.update()
+                            
+                    if ((batch + 1) % iters_to_accumulate == 0) or ((batch + 1) == len(dataloader)):
+                        scaler.step(optimizer)
+                        scaler.update()
+                        optimizer.zero_grad()
                     
                     if config.rollback == "manual":
                         for k in grad_mask:

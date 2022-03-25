@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 import torch.distributed as dist
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, StepLR
 
 import wandb
 from optim import MaskedSGD, MaskedAdam
@@ -34,6 +34,8 @@ def cleanup():
 
 
 def get_optimizer(config, model):
+    print(f"Initialize optimizer {config.optim}")
+    
     # Define optimizer and scheduler
     named_params = list(map(list, zip(*list(model.named_parameters()))))
     if config.optim == "sgd":
@@ -44,8 +46,12 @@ def get_optimizer(config, model):
 
 
 def get_scheduler(config, optimizer):
+    print("Initialize scheduler")
+    
     if config.dataset == "cifar10":
         return MultiStepLR(optimizer, milestones=[100, 150])
+    if config.dataset == "imagenet":
+        return StepLR(optimizer, step_size=30)
 
 
 def get_gradient_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask, arch_config):
@@ -114,17 +120,17 @@ def cosine_similarity(x1, x2, dim, eps=1e-8):
     x1_squared_norm = torch.pow(x1, 2).sum(dim=dim, keepdim=True)
     x2_squared_norm = torch.pow(x2, 2).sum(dim=dim, keepdim=True)
     
-    x1_squared_norm.clamp_min_(eps)
-    x2_squared_norm.clamp_min_(eps)
+    # x1_squared_norm.clamp_min_(eps)
+    # x2_squared_norm.clamp_min_(eps)
     
     x1_norm = x1_squared_norm.sqrt_()
     x2_norm = x2_squared_norm.sqrt_()
     
-    x1_normalized = x1.div(x1_norm)
-    x2_normalized = x2.div(x2_norm)
+    x1_normalized = x1.div(x1_norm).nan_to_num(nan=0, posinf=0, neginf=0)
+    x2_normalized = x2.div(x2_norm).nan_to_num(nan=0, posinf=0, neginf=0)
     
-    mask_1 = (torch.abs(x1).sum(dim=dim) == 0) * (torch.abs(x2).sum(dim=dim) == 0)
-    mask_2 = (torch.abs(x1).sum(dim=dim) != 0) * (torch.abs(x2).sum(dim=dim) != 0)
+    mask_1 = (torch.abs(x1_normalized).sum(dim=dim) <= eps) * (torch.abs(x2_normalized).sum(dim=dim) <= eps)
+    mask_2 = (torch.abs(x1_normalized).sum(dim=dim) > eps) * (torch.abs(x2_normalized).sum(dim=dim) > eps)
     
     cos_sim_value = torch.sum(x1_normalized * x2_normalized, dim=dim)
     

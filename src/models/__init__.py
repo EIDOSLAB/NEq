@@ -1,5 +1,4 @@
-import yaml
-from yaml import FullLoader
+from torchvision.models import resnet18
 
 from .lenet import *
 from .resnet import *
@@ -34,16 +33,20 @@ class Hook:
 
 
 def get_model(config):
+    print(f"Initialize model {config.arch}")
+    
     if config.arch == "lenet5":
         model = LeNet5()
     elif config.arch == "resnet32-cifar":
         model = resnet32()
+    elif config.arch == "resnet18-imagenet":
+        model = resnet18(False)
     else:
         raise ValueError(f"No such model {config.arch}")
     
-    with open(f'models/configs/{config.arch}.yaml') as f:
-        arch_config = yaml.load(f.read(), Loader=FullLoader)
-        
+    # with open(f'models/configs/{config.arch}.yaml') as f:
+    #     arch_config = yaml.load(f.read(), Loader=FullLoader)
+    
     total_neurons = 0
     
     for m in model.modules():
@@ -54,7 +57,7 @@ def get_model(config):
         if isinstance(m, nn.BatchNorm2d):
             total_neurons += m.weight.shape[0]
     
-    return model, arch_config, total_neurons
+    return model, None, total_neurons
 
 
 def attach_hooks(config, model, hooks, arch_config):
