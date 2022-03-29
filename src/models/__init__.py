@@ -18,9 +18,11 @@ class Hook:
     
     def hook_fn(self, module: torch.nn.Module, input: torch.Tensor, output: torch.Tensor) -> None:
         if self.config.mask_mode == "per-sample":
+            # self.samples_activation.append(output.mean(dim=(2, 3)).mean(dim=0, keepdim=True))
             self.samples_activation.append(output.mean(dim=(2, 3)))
         if self.config.mask_mode == "per-feature":
-            self.samples_activation.append(output)
+            # self.samples_activation.append(output.mean(dim=0, keepdim=True))
+            self.samples_activation.append(output.cpu())
     
     def get_samples_activation(self):
         return torch.cat(self.samples_activation)

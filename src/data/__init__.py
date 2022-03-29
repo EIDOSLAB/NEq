@@ -100,8 +100,8 @@ def get_data(config):
     else:
         raise ValueError(f"No such dataset {config.dataset}")
     
-    print(f"Train set length {len(train_dataloader)}")
-    print(f"Validation set length {len(valid_dataloader)}")
-    print(f"Test set length {len(test_dataloader)}")
+    print(f"Train set length {len(train)}")
+    print(f"Validation set length {len(validation)}")
+    print(f"Test set length {len(test_dataset)}")
     
     return train_dataloader, valid_dataloader, test_dataloader
