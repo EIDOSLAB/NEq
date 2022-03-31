@@ -22,7 +22,10 @@ class Hook:
             self.samples_activation.append(output.mean(dim=(2, 3)))
         if self.config.mask_mode == "per-feature":
             # self.samples_activation.append(output.mean(dim=0, keepdim=True))
-            self.samples_activation.append(output)
+            if self.config.dataset == "imagenet":
+                self.samples_activation.append(output.cpu())
+            else:
+                self.samples_activation.append(output)
     
     def get_samples_activation(self):
         return torch.cat(self.samples_activation)
