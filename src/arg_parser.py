@@ -80,6 +80,7 @@ def get_parser():
                         help="Pinning.")
     parser.add_argument("--rollback-model", type=int2bool, choices=[0, 1], default=0,
                         help="Rollback the model configuration before a decay step.")
+    parser.add_argument("--delta-log-target", type=str, help="Layer target for logging reduced deltas.")
     
     config = parser.parse_args()
     

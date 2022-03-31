@@ -77,6 +77,11 @@ def random_mask(k, pre_epoch_activations, topk, grad_mask, arch_config):
 
 def evaluated_mask(config, k, pre_epoch_activations, post_epoch_activations, topk, grad_mask, arch_config):
     reduced_activation_delta = get_reduced_activation_delta(config, k, pre_epoch_activations, post_epoch_activations)
+
+    if k == config.delta_log_target:
+        with open(f"/scratch/{k}_deltas.txt", "a") as file:
+            file.write(str(reduced_activation_delta))
+            file.write("\n")
     
     if config.eps != "-":
         mask = torch.where(reduced_activation_delta <= config.eps)[0]
