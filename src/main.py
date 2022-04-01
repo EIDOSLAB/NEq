@@ -55,8 +55,7 @@ def main(rank, config):
     
     # Init dictionaries
     hooks = {}
-    pre_epoch_activations = {}
-    post_epoch_activations = {}
+    previous_activations = {}
     grad_mask = {}
     
     frozen_neurons = {"total": 0,
@@ -78,12 +77,14 @@ def main(rank, config):
     
     # Save the activations into the dict
     for k in hooks:
-        pre_epoch_activations[k] = hooks[k].get_samples_activation()
+        previous_activations[k] = hooks[k].get_samples_activation()
         hooks[k].close()
     
     # In case of DDP wait for all the processes before starting the training
     if rank > -1:
         dist.barrier()
+        
+    train, valid, test = {}, {}, {}
     
     # Epochs cycle
     for epoch in range(config.epochs):
@@ -97,17 +98,9 @@ def main(rank, config):
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the PSP values for the current epoch (after the train step)
-        attach_hooks(config, model, hooks, pre_epoch_activations)
-        # for k in hooks:
-        #     with open(f"/scratch/test/{k}_pre.txt", "a") as f:
-        #         f.write(str(pre_epoch_activations[k]))
-        #         f.write("\n")
+        attach_hooks(config, model, hooks, previous_activations)
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
-        # for k in hooks:
-        #     with open(f"/scratch/test/{k}_post.txt", "a") as f:
-        #         f.write(str(pre_epoch_activations[k]))
-        #         f.write("\n")
         
         # If we want to rollback the model config we update the configuration if the loss improved
         if config.rollback_model and valid["loss"] < best_valid_loss:
