@@ -15,6 +15,10 @@ RUN mkdir /scratch
 RUN chmod 775 /scratch
 RUN chown -R :1337 /scratch
 
+RUN mkdir /scratch/test
+RUN chmod 775 /scratch/test
+RUN chown -R :1337 /scratch/test
+
 WORKDIR /src
 
 ENTRYPOINT ["python3"]

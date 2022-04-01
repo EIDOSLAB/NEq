@@ -54,42 +54,40 @@ def get_scheduler(config, optimizer):
         return StepLR(optimizer, step_size=30)
 
 
-def get_gradient_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask, arch_config):
+def get_gradient_mask(config, epoch, k, reduced_activation_delta, grad_mask):
     # If the warmup epochs are over we can start evaluating the masks
     if epoch > (config.warmup - 1):
         if config.random_mask:
-            random_mask(k, pre_epoch_activations, config.topk, grad_mask, arch_config)
+            random_mask(k, reduced_activation_delta, config.topk, grad_mask)
         else:
-            evaluated_mask(config, k, pre_epoch_activations, post_epoch_activations, config.topk, grad_mask,
-                           arch_config)
+            evaluated_mask(config, k, reduced_activation_delta, config.topk, grad_mask)
 
 
-def random_mask(k, pre_epoch_activations, topk, grad_mask, arch_config):
+def random_mask(k, reduced_activation_delta, topk, grad_mask):
     # How many neurons to select as "to freeze" as percentage of the total number of neurons
-    topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
+    topk = int((1 - topk) * reduced_activation_delta.shape[0])
     
-    mask = random.sample(range(0, pre_epoch_activations[k].shape[1]), topk)
+    mask = random.sample(range(0, reduced_activation_delta.shape[0]), topk)
     
     grad_mask[k] = mask
     # for attached in arch_config["bn-conv"][k]:
     #     grad_mask[attached] = mask
 
 
-def evaluated_mask(config, k, pre_epoch_activations, post_epoch_activations, topk, grad_mask, arch_config):
-    reduced_activation_delta = get_reduced_activation_delta(config, k, pre_epoch_activations, post_epoch_activations)
-
-    if k == config.delta_log_target:
-        with open(f"/scratch/{k}_deltas.txt", "a") as file:
-            file.write(str(reduced_activation_delta))
-            file.write("\n")
+def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
+    # reduced_activation_delta = get_reduced_activation_delta(config, k, pre_epoch_activations, post_epoch_activations)
     
+    with open(f"/scratch/test/{k}_deltas.txt", "a") as f:
+        f.write(str(reduced_activation_delta))
+        f.write("\n")
+        
     if config.eps != "-":
         mask = torch.where(reduced_activation_delta <= config.eps)[0]
     elif config.binomial:
         mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
     else:
         # How many neurons to select as "to freeze" as percentage of the total number of neurons
-        topk = int((1 - topk) * pre_epoch_activations[k].shape[1])
+        topk = int((1 - topk) * reduced_activation_delta[k].shape[0])
         mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
     
     if config.pinning and k in grad_mask:
