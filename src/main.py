@@ -96,8 +96,8 @@ def main(rank, config):
             frozen_neurons = log_masks(model, grad_mask, total_neurons)
         
         # Train step
-        # models.active = False
-        # train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
+        models.active = False
+        train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the PSP values for the current epoch (after the train step)
         # attach_hooks(config, model, hooks)
