@@ -69,7 +69,7 @@ class ResNetBasicblock(nn.Module):
         
         basicblock = self.conv_a(x)
         basicblock = self.bn_a(basicblock)
-        basicblock = F.relu(basicblock, inplace=True)
+        basicblock = F.relu(basicblock, inplace=False)
         
         basicblock = self.conv_b(basicblock)
         basicblock = self.bn_b(basicblock)
@@ -77,7 +77,7 @@ class ResNetBasicblock(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
         
-        return F.relu(residual + basicblock, inplace=True)
+        return F.relu(residual + basicblock, inplace=False)
 
 
 class CifarResNet(nn.Module):
@@ -139,7 +139,7 @@ class CifarResNet(nn.Module):
     
     def forward(self, x):
         x = self.conv_1_3x3(x)
-        x = F.relu(self.bn_1(x), inplace=True)
+        x = F.relu(self.bn_1(x), inplace=False)
         x = self.stage_1(x)
         x = self.stage_2(x)
         x = self.stage_3(x)

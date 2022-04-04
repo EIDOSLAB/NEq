@@ -8,6 +8,7 @@ from filelock import FileLock
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+import models
 import wandb
 from arg_parser import get_parser
 from data import get_data
@@ -30,7 +31,7 @@ def main(rank, config):
         device = config.device
     
     # Get model
-    model, arch_config, total_neurons = get_model(config)
+    model, total_neurons = get_model(config)
     model.to(device)
     
     # DDP for multi gpu
@@ -66,7 +67,8 @@ def main(rank, config):
     attach_hooks(config, model, hooks)
     
     # First run on validation to get the PSP for epoch -1
-    valid = run(config, model, valid_loader, None, scaler, device, arch_config)
+    models.active = True
+    valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
     
     # If we want to rollback the model config we save the first configuration
     if config.rollback_model:
@@ -78,28 +80,29 @@ def main(rank, config):
     # Save the activations into the dict
     for k in hooks:
         previous_activations[k] = hooks[k].get_samples_activation()
-        hooks[k].close()
+        hooks[k].reset(previous_activations[k])
     
     # In case of DDP wait for all the processes before starting the training
     if rank > -1:
         dist.barrier()
-        
+    
     train, valid, test = {}, {}, {}
     
     # Epochs cycle
     for epoch in range(config.epochs):
-
+        
         if epoch > (config.warmup - 1):
-
             # Log the amount of frozen neurons
             frozen_neurons = log_masks(model, grad_mask, total_neurons)
         
         # Train step
-        train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
+        # models.active = False
+        # train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the PSP values for the current epoch (after the train step)
-        attach_hooks(config, model, hooks, previous_activations)
-        
+        # attach_hooks(config, model, hooks)
+
+        models.active = True
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
         
         # If we want to rollback the model config we update the configuration if the loss improved
@@ -108,11 +111,11 @@ def main(rank, config):
             best_valid_loss = valid["loss"]
             best_model_state_dict = deepcopy(model.state_dict())
             best_optim_state_dict = deepcopy(optimizer.state_dict())
-
+        
         # If we do not want to pin the frozen neurons, we reinitialize the masks dict
         if not config.pinning:
             grad_mask = {}
-
+        
         # If we use the MaskedSGD optimizer we replace the mask used in the last epoch with an empty one.
         # It will be filled later
         if config.rollback == "optim" and isinstance(optimizer, (MaskedSGD, MaskedAdam)):
@@ -121,10 +124,12 @@ def main(rank, config):
         # Save the activations into the dict
         for k in hooks:
             # Get the masks, either random or evaluated
-            get_gradient_mask(config, epoch+1, k, hooks[k].get_reduced_activation_delta(), grad_mask)
-            hooks[k].close()
-            
+            deltas = hooks[k].get_delta_of_delta() if config.delta_of_delta else hooks[k].get_reduced_activation_delta()
+            get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
+            hooks[k].reset()
+        
         # Test step
+        models.active = False
         test = run(config, model, test_loader, None, scaler, device, grad_mask)
         
         # Logs

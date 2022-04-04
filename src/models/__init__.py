@@ -3,16 +3,21 @@ from torchvision.models import resnet18
 from .lenet import *
 from .resnet import *
 
+global active
+
 
 class Hook:
     
-    def __init__(self, config, name, module, previous_activations) -> None:
+    def __init__(self, config, name, module, momentum=0) -> None:
         self.name = name
         self.module = module
         self.samples_activation = []
-        self.previous_activations = previous_activations
+        self.previous_activations = None
         self.activation_deltas = 0
         self.total_samples = 0
+        
+        self.momentum = momentum
+        self.delta_buffer = 0
         
         self.config = config
         
@@ -20,8 +25,10 @@ class Hook:
     
     def hook_fn(self, module: torch.nn.Module, input: torch.Tensor, output: torch.Tensor) -> None:
         
-        # TODO sort this mess
+        if not active:
+            return
         
+        # TODO sort this mess
         if self.config.mask_mode == "per-sample":
             reshaped_output = output.view(output.shape[0], output.shape[1], -1).mean(dim=2)
         if self.config.mask_mode == "per-feature":
@@ -77,8 +84,19 @@ class Hook:
         
         return reduced_activation_delta
     
-    def reset(self):
+    def get_delta_of_delta(self):
+        reduced_activation_delta = self.get_reduced_activation_delta()
+        delta_of_delta = torch.abs(self.delta_buffer - reduced_activation_delta)
+        self.delta_buffer = reduced_activation_delta
+        
+        return delta_of_delta
+    
+    def reset(self, previous_activations=None):
         self.samples_activation = []
+        self.activation_deltas = 0
+        self.total_samples = 0
+        if previous_activations is not None:
+            self.previous_activations = previous_activations
     
     def close(self) -> None:
         self.hook.remove()
@@ -117,9 +135,6 @@ def get_model(config):
     else:
         raise ValueError(f"No such model {config.arch}")
     
-    # with open(f'models/configs/{config.arch}.yaml') as f:
-    #     arch_config = yaml.load(f.read(), Loader=FullLoader)
-    
     total_neurons = 0
     
     for m in model.modules():
@@ -130,11 +145,11 @@ def get_model(config):
         if isinstance(m, nn.BatchNorm2d):
             total_neurons += m.weight.shape[0]
     
-    return model, None, total_neurons
+    return model, total_neurons
 
 
-def attach_hooks(config, model, hooks, previous_activations=None):
+def attach_hooks(config, model, hooks):
     for n, m in model.named_modules():
         # if n in arch_config["targets"]:
         if isinstance(m, (nn.Conv2d, nn.BatchNorm2d)):
-            hooks[n] = Hook(config, n, m, previous_activations[n] if previous_activations is not None else None)
+            hooks[n] = Hook(config, n, m)

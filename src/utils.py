@@ -73,12 +73,6 @@ def random_mask(k, reduced_activation_delta, topk, grad_mask):
 
 
 def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
-    # reduced_activation_delta = get_reduced_activation_delta(config, k, pre_epoch_activations, post_epoch_activations)
-    
-    with open(f"/scratch/test/{k}_deltas.txt", "a") as f:
-        f.write(str(reduced_activation_delta))
-        f.write("\n")
-    
     if config.eps != "-":
         mask = torch.where(reduced_activation_delta <= config.eps)[0]
     elif config.binomial:
