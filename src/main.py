@@ -51,12 +51,11 @@ def main(rank, config):
     # Init wandb
     if rank <= 0:
         print("Initialize wandb run")
-        wandb.init(project="zero-grad", config=config)
+        wandb.init(project="zero-grad-test", config=config)
     
     # Init dictionaries
     hooks = {}
-    pre_epoch_activations = {}
-    post_epoch_activations = {}
+    previous_activations = {}
     grad_mask = {}
     
     frozen_neurons = {"total": 0,
@@ -64,7 +63,7 @@ def main(rank, config):
                                 isinstance(m, (nn.Conv2d, nn.BatchNorm2d))}}
     
     # Attach the hooks used to gather the PSP value
-    attach_hooks(config, model, hooks, arch_config)
+    attach_hooks(config, model, hooks)
     
     # First run on validation to get the PSP for epoch -1
     valid = run(config, model, valid_loader, None, scaler, device, arch_config)
@@ -78,35 +77,20 @@ def main(rank, config):
     
     # Save the activations into the dict
     for k in hooks:
-        pre_epoch_activations[k] = hooks[k].get_samples_activation()
+        previous_activations[k] = hooks[k].get_samples_activation()
         hooks[k].close()
     
     # In case of DDP wait for all the processes before starting the training
     if rank > -1:
         dist.barrier()
+        
+    train, valid, test = {}, {}, {}
     
     # Epochs cycle
     for epoch in range(config.epochs):
-        # If we do not want to pin the frozen neurons, we reinitialize the masks dict
-        if not config.pinning:
-            grad_mask = {}
-        
-        # If we use the MaskedSGD optimizer we replace the mask used in the last epoch with an empty one.
-        # It will be filled later
-        if config.rollback == "optim" and isinstance(optimizer, (MaskedSGD, MaskedAdam)):
-            optimizer.param_groups[0]["masks"] = grad_mask
-        
-        # Get the neurons masks
-        if len(post_epoch_activations):
-            
-            for k in hooks:
-                # Get the masks, either random or evaluated
-                get_gradient_mask(config, epoch, k, pre_epoch_activations, post_epoch_activations, grad_mask,
-                                  arch_config)
-                
-                # Update the activations dictionary
-                pre_epoch_activations[k] = post_epoch_activations[k]
-            
+
+        if epoch > (config.warmup - 1):
+
             # Log the amount of frozen neurons
             frozen_neurons = log_masks(model, grad_mask, total_neurons)
         
@@ -114,7 +98,7 @@ def main(rank, config):
         train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the PSP values for the current epoch (after the train step)
-        attach_hooks(config, model, hooks, arch_config)
+        attach_hooks(config, model, hooks, previous_activations)
         
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
         
@@ -124,12 +108,22 @@ def main(rank, config):
             best_valid_loss = valid["loss"]
             best_model_state_dict = deepcopy(model.state_dict())
             best_optim_state_dict = deepcopy(optimizer.state_dict())
+
+        # If we do not want to pin the frozen neurons, we reinitialize the masks dict
+        if not config.pinning:
+            grad_mask = {}
+
+        # If we use the MaskedSGD optimizer we replace the mask used in the last epoch with an empty one.
+        # It will be filled later
+        if config.rollback == "optim" and isinstance(optimizer, (MaskedSGD, MaskedAdam)):
+            optimizer.param_groups[0]["masks"] = grad_mask
         
         # Save the activations into the dict
         for k in hooks:
-            post_epoch_activations[k] = hooks[k].get_samples_activation()
+            # Get the masks, either random or evaluated
+            get_gradient_mask(config, epoch+1, k, hooks[k].get_reduced_activation_delta(), grad_mask)
             hooks[k].close()
-        
+            
         # Test step
         test = run(config, model, test_loader, None, scaler, device, grad_mask)
         
