@@ -33,6 +33,9 @@ class Hook:
             reshaped_output = output.view(output.shape[0], output.shape[1], -1).mean(dim=2)
         if self.config.mask_mode == "per-feature":
             reshaped_output = output.view(output.shape[0], output.shape[1], -1)
+            
+        if self.config.dataset == "imagenet":
+            reshaped_output = reshaped_output.cpu()
         
         if self.previous_activations is None:
             self.samples_activation.append(reshaped_output)

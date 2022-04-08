@@ -1,6 +1,7 @@
 import os
 from copy import deepcopy
 
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -52,7 +53,7 @@ def main(rank, config):
     # Init wandb
     if rank <= 0:
         print("Initialize wandb run")
-        wandb.init(project="zero-grad-test", config=config)
+        wandb.init(project="zero-grad", config=config)
     
     # Init dictionaries
     hooks = {}
@@ -101,7 +102,7 @@ def main(rank, config):
         
         # Gather the PSP values for the current epoch (after the train step)
         # attach_hooks(config, model, hooks)
-
+        
         models.active = True
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
         
@@ -122,11 +123,15 @@ def main(rank, config):
             optimizer.param_groups[0]["masks"] = grad_mask
         
         # Save the activations into the dict
+        log_deltas = {}
         for k in hooks:
             # Get the masks, either random or evaluated
             deltas = hooks[k].get_delta_of_delta() if config.delta_of_delta else hooks[k].get_reduced_activation_delta()
             get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
             hooks[k].reset()
+            
+            hist = np.histogram(deltas.cpu().numpy(), bins=min(512, deltas.shape[0]))
+            log_deltas[f"{k}"] = wandb.Histogram(np_histogram=hist)
         
         # Test step
         models.active = False
@@ -140,7 +145,8 @@ def main(rank, config):
                 "valid":               valid,
                 "test":                test,
                 "epochs":              epoch,
-                "lr":                  optimizer.param_groups[0]["lr"]
+                "lr":                  optimizer.param_groups[0]["lr"],
+                "deltas":              log_deltas
             })
             
             print(f"Epoch\t {epoch}\n"

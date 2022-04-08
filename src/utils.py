@@ -6,7 +6,6 @@ import torch
 import torch.distributed as dist
 from torch.optim.lr_scheduler import MultiStepLR, StepLR
 
-import wandb
 from optim import MaskedSGD, MaskedAdam
 
 
@@ -86,9 +85,6 @@ def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
         grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
     else:
         grad_mask[k] = mask
-    
-    hist = np.histogram(reduced_activation_delta.cpu().numpy(), bins=min(512, reduced_activation_delta.shape[0]))
-    wandb.log({f"mean_deltas_{k}": wandb.Histogram(np_histogram=hist)})
 
 
 @torch.no_grad()
