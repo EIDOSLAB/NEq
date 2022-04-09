@@ -65,23 +65,23 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
                 
                 loss = F.cross_entropy(output, target)
                 
-                if train:
-                    scaler.scale(loss).backward()
+        if train:
+            scaler.scale(loss).backward()
+            
+            if config.rollback == "manual":
+                pre_optim_state = deepcopy(model.state_dict())
+            elif config.rollback == "none":
+                for k in grad_mask:
+                    zero_gradients(model, k, grad_mask[k])
                     
-                    if config.rollback == "manual":
-                        pre_optim_state = deepcopy(model.state_dict())
-                    elif config.rollback == "none":
-                        for k in grad_mask:
-                            zero_gradients(model, k, grad_mask[k])
-                            
-                    if ((batch + 1) % iters_to_accumulate == 0) or ((batch + 1) == len(dataloader)):
-                        scaler.step(optimizer)
-                        scaler.update()
-                        optimizer.zero_grad()
-                    
-                    if config.rollback == "manual":
-                        for k in grad_mask:
-                            rollback_module(model, k, grad_mask[k], pre_optim_state)
+            if ((batch + 1) % iters_to_accumulate == 0) or ((batch + 1) == len(dataloader)):
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+            
+            if config.rollback == "manual":
+                for k in grad_mask:
+                    rollback_module(model, k, grad_mask[k], pre_optim_state)
         
         tot_loss += loss.item()
         outputs.append(output.detach().float())

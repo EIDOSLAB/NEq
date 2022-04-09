@@ -54,6 +54,7 @@ def main(rank, config):
     if rank <= 0:
         print("Initialize wandb run")
         wandb.init(project="zero-grad", config=config)
+        os.makedirs(os.path.join("/scratch", wandb.run.name))
     
     # Init dictionaries
     hooks = {}
@@ -153,6 +154,11 @@ def main(rank, config):
                   f"train\t {train}\n"
                   f"valid\t {valid}\n"
                   f"test\t {test}\n")
+        
+        torch.save({"model": model.state_dict(),
+                    "optim": optimizer.state_dict(),
+                    "epoch": epoch},
+                   os.path.join("/scratch", wandb.run.name, "checkpoint.pt"))
         
         # Scheduler step
         if scheduler is not None:
