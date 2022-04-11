@@ -35,14 +35,24 @@ def main(rank, config):
     model, total_neurons = get_model(config)
     model.to(device)
     
-    # DDP for multi gpu
-    if rank > -1:
-        model = DDP(model, device_ids=[rank], output_device=rank)
-    
     # Build optimizer and scheduler
     optimizer = get_optimizer(config, model)
     scheduler = get_scheduler(config, optimizer)
-    
+
+    if config.ckp:
+        print(f"Loading from {config.ckp}")
+        ckp = torch.load(config.ckp, map_location=device)
+        model.load_state_dict(ckp["model"])
+        optimizer.load_state_dict(ckp["optim"])
+        
+        ckp_epoch = ckp["epoch"]
+        
+        del ckp
+
+    # DDP for multi gpu
+    if rank > -1:
+        model = DDP(model, device_ids=[rank], output_device=rank)
+        
     # Create dataloaders
     with FileLock('data.lock'):
         train_loader, valid_loader, test_loader = get_data(config)
@@ -54,7 +64,7 @@ def main(rank, config):
     if rank <= 0:
         print("Initialize wandb run")
         wandb.init(project="zero-grad", config=config)
-        os.makedirs(os.path.join("/scratch", wandb.run.name))
+        # os.makedirs(os.path.join("./scratch", wandb.run.name))
     
     # Init dictionaries
     hooks = {}
@@ -92,6 +102,10 @@ def main(rank, config):
     
     # Epochs cycle
     for epoch in range(config.epochs):
+        
+        if config.ckp and epoch < ckp_epoch:
+            scheduler.step()
+            continue
         
         if epoch > (config.warmup - 1):
             # Log the amount of frozen neurons
@@ -157,6 +171,7 @@ def main(rank, config):
         
         torch.save({"model": model.state_dict(),
                     "optim": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict() if scheduler is not None else None,
                     "epoch": epoch},
                    os.path.join("/scratch", wandb.run.name, "checkpoint.pt"))
         

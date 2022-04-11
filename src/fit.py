@@ -5,6 +5,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from tqdm import tqdm
 
+from measures import Accuracy, AverageMeter
 from utils import find_module_by_name
 
 
@@ -37,10 +38,6 @@ def rollback_module(model, name, mask, pre_optim_state):
 def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
     train = optimizer is not None
     
-    tot_loss = 0.
-    outputs = []
-    targets = []
-    
     model.train(train)
     pbar = tqdm(dataloader, desc="Training" if train else "Testing",
                 disable=(dist.is_initialized() and dist.get_rank() > 0))
@@ -49,11 +46,16 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
         target_bs = 100
     elif config.dataset == "imagenet":
         target_bs = 256
-
+    
     iters_to_accumulate = target_bs // config.batch_size
     
     if train:
         optimizer.zero_grad()
+    
+    accuracy_meter_1 = AverageMeter()
+    accuracy_meter_5 = AverageMeter()
+    loss_meter = AverageMeter()
+    acc = Accuracy((1, 5))
     
     for batch, (images, target) in enumerate(pbar):
         images, target = images.to(device, non_blocking=True), \
@@ -64,7 +66,7 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
                 output = model(images)
                 
                 loss = F.cross_entropy(output, target)
-                
+        
         if train:
             scaler.scale(loss).backward()
             
@@ -73,7 +75,7 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
             elif config.rollback == "none":
                 for k in grad_mask:
                     zero_gradients(model, k, grad_mask[k])
-                    
+            
             if ((batch + 1) % iters_to_accumulate == 0) or ((batch + 1) == len(dataloader)):
                 scaler.step(optimizer)
                 scaler.update()
@@ -83,15 +85,9 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
                 for k in grad_mask:
                     rollback_module(model, k, grad_mask[k], pre_optim_state)
         
-        tot_loss += loss.item()
-        outputs.append(output.detach().float())
-        targets.append(target)
+        accuracy = acc(output, target)
+        accuracy_meter_1.update(accuracy[0].item(), target.shape[0])
+        accuracy_meter_5.update(accuracy[1].item(), target.shape[0])
+        loss_meter.update(loss.item(), target.shape[0])
     
-    outputs = torch.cat(outputs, dim=0)
-    targets = torch.cat(targets, dim=0)
-    
-    accs = {
-        'top1': topk_accuracy(outputs, targets, topk=1),
-        'top5': topk_accuracy(outputs, targets, topk=5)
-    }
-    return {'loss': tot_loss / len(dataloader.dataset), 'accuracy': accs}
+    return {'loss': loss_meter.avg, 'accuracy': {"top1": accuracy_meter_1.avg, "top5": accuracy_meter_5.avg}}

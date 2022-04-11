@@ -82,6 +82,8 @@ def get_parser():
                         help="Rollback the model configuration before a decay step.")
     parser.add_argument("--delta-of-delta", type=int2bool, choices=[0, 1], default=0,
                         help="Use delta of delta.")
+
+    parser.add_argument("--ckp", type=str)
     
     config = parser.parse_args()
     
