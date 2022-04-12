@@ -9,14 +9,19 @@ from filelock import FileLock
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-import models
 import wandb
-from arg_parser import get_parser
-from data import get_data
-from fit import run
-from models import get_model, attach_hooks
+from classification.arg_parser import get_parser
+from classification.data import get_data
+from classification.fit import run
+from classification.models import get_model
+from classification.utils import get_optimizer, get_scheduler
+from general_utils import set_seed, setup, cleanup, attach_hooks, get_gradient_mask, log_masks
 from optim import MaskedSGD, MaskedAdam
-from utils import set_seed, setup, get_optimizer, cleanup, get_gradient_mask, log_masks, get_scheduler
+
+
+def activate_hooks(hooks, active):
+    for h in hooks:
+        hooks[h].activate(active)
 
 
 def main(rank, config):
@@ -38,7 +43,7 @@ def main(rank, config):
     # Build optimizer and scheduler
     optimizer = get_optimizer(config, model)
     scheduler = get_scheduler(config, optimizer)
-
+    
     if config.ckp:
         print(f"Loading from {config.ckp}")
         ckp = torch.load(config.ckp, map_location=device)
@@ -48,11 +53,11 @@ def main(rank, config):
         ckp_epoch = ckp["epoch"]
         
         del ckp
-
+    
     # DDP for multi gpu
     if rank > -1:
         model = DDP(model, device_ids=[rank], output_device=rank)
-        
+    
     # Create dataloaders
     with FileLock('data.lock'):
         train_loader, valid_loader, test_loader = get_data(config)
@@ -64,8 +69,8 @@ def main(rank, config):
     if rank <= 0:
         print("Initialize wandb run")
         wandb.init(project="zero-grad", config=config)
-        # os.makedirs(os.path.join("./scratch", wandb.run.name))
-    
+        # os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.name))
+     
     # Init dictionaries
     hooks = {}
     previous_activations = {}
@@ -79,7 +84,7 @@ def main(rank, config):
     attach_hooks(config, model, hooks)
     
     # First run on validation to get the PSP for epoch -1
-    models.active = True
+    activate_hooks(hooks, True)
     valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
     
     # If we want to rollback the model config we save the first configuration
@@ -112,13 +117,13 @@ def main(rank, config):
             frozen_neurons = log_masks(model, grad_mask, total_neurons)
         
         # Train step
-        models.active = False
-        train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
+        # activate_hooks(hooks, False)
+        # train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the PSP values for the current epoch (after the train step)
         # attach_hooks(config, model, hooks)
         
-        models.active = True
+        activate_hooks(hooks, True)
         valid = run(config, model, valid_loader, None, scaler, device, grad_mask)
         
         # If we want to rollback the model config we update the configuration if the loss improved
@@ -149,7 +154,7 @@ def main(rank, config):
             log_deltas[f"{k}"] = wandb.Histogram(np_histogram=hist)
         
         # Test step
-        models.active = False
+        activate_hooks(hooks, False)
         test = run(config, model, test_loader, None, scaler, device, grad_mask)
         
         # Logs
@@ -169,11 +174,18 @@ def main(rank, config):
                   f"valid\t {valid}\n"
                   f"test\t {test}\n")
         
-        torch.save({"model": model.state_dict(),
-                    "optim": optimizer.state_dict(),
-                    "scheduler": scheduler.state_dict() if scheduler is not None else None,
-                    "epoch": epoch},
-                   os.path.join("/scratch", wandb.run.name, "checkpoint.pt"))
+        checkpoint = {
+            "model":        model.state_dict(),
+            "optimizer":    optimizer.state_dict(),
+            "lr_scheduler": scheduler.state_dict(),
+            "epoch":        epoch,
+            "config":       config,
+        }
+        if config.amp:
+            checkpoint["scaler"] = scaler.state_dict()
+        
+        torch.save(checkpoint, os.path.join("/scratch", "checkpoints", wandb.run.name, "checkpoint.pt"))
+        del checkpoint
         
         # Scheduler step
         if scheduler is not None:

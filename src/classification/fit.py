@@ -5,8 +5,8 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from measures import Accuracy, AverageMeter
-from utils import find_module_by_name
+from classification.measures import Accuracy, AverageMeter
+from general_utils import find_module_by_name
 
 
 def topk_accuracy(outputs, labels, topk=1):
@@ -90,4 +90,5 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
         accuracy_meter_5.update(accuracy[1].item(), target.shape[0])
         loss_meter.update(loss.item(), target.shape[0])
     
-    return {'loss': loss_meter.avg, 'accuracy': {"top1": accuracy_meter_1.avg, "top5": accuracy_meter_5.avg}}
+    return {'loss':     loss_meter.avg,
+            'accuracy': {"top1": accuracy_meter_1.avg / 100, "top5": accuracy_meter_5.avg / 100}}
