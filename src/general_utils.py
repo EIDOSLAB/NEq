@@ -126,15 +126,17 @@ class Hook:
         if self.previous_activations is None:
             self.samples_activation.append(reshaped_output)
         else:
+            previous = self.previous_activations[self.total_samples:output.shape[0] + self.total_samples].float()
             if self.config.delta_mode == "difference":
-                delta = reshaped_output.float() \
-                        - self.previous_activations[self.total_samples:output.shape[0] + self.total_samples].float()
+                delta = reshaped_output.float() - previous
             if self.config.delta_mode == "cosine":
                 delta = 1 - torch.abs(
                     cosine_similarity(
                         reshaped_output.float(),
-                        self.previous_activations[self.total_samples:output.shape[0] + self.total_samples].float(),
-                        dim=0 if self.config.mask_mode == "per-sample" else 2))
+                        previous,
+                        dim=0 if self.config.mask_mode == "per-sample" else 2
+                    )
+                )
             
             if self.config.mask_mode == "per-feature" and self.config.reduction == "mean":
                 delta = torch.sum(delta, dim=0)
@@ -151,7 +153,7 @@ class Hook:
             self.total_samples += output.shape[0]
     
     def get_samples_activation(self):
-        return self.samples_activation
+        return torch.cat(self.samples_activation)
     
     def get_reduced_activation_delta(self):
         if self.config.mask_mode == "per-sample":

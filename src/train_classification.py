@@ -69,7 +69,7 @@ def main(rank, config):
     if rank <= 0:
         print("Initialize wandb run")
         wandb.init(project="zero-grad", config=config)
-        # os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.name))
+        os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.name))
      
     # Init dictionaries
     hooks = {}
@@ -117,8 +117,8 @@ def main(rank, config):
             frozen_neurons = log_masks(model, grad_mask, total_neurons)
         
         # Train step
-        # activate_hooks(hooks, False)
-        # train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
+        activate_hooks(hooks, False)
+        train = run(config, model, train_loader, optimizer, scaler, device, grad_mask)
         
         # Gather the PSP values for the current epoch (after the train step)
         # attach_hooks(config, model, hooks)

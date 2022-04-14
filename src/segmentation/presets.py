@@ -26,10 +26,11 @@ class SegmentationPresetTrain:
 
 
 class SegmentationPresetEval:
-    def __init__(self, *, base_size, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    def __init__(self, *, base_size, crop_size, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         self.transforms = T.Compose(
             [
                 T.RandomResize(base_size, base_size),
+                T.CenterCrop(crop_size),
                 T.PILToTensor(),
                 T.ConvertImageDtype(torch.float),
                 T.Normalize(mean=mean, std=std),

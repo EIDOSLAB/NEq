@@ -48,7 +48,7 @@ def get_transform(train, args):
         
         return preprocessing
     else:
-        return presets.SegmentationPresetEval(base_size=520)
+        return presets.SegmentationPresetEval(base_size=520, crop_size=480)
 
 
 def criterion(inputs, target):
@@ -70,7 +70,6 @@ def evaluate(model, data_loader, device, num_classes, amp):
     with torch.inference_mode():
         for image, target in metric_logger.log_every(data_loader, 100, header):
             image, target = image.to(device), target.to(device)
-            print(image.shape)
             
             with torch.cuda.amp.autocast(enabled=amp):
                 output = model(image)
@@ -148,13 +147,13 @@ def main(config):
         drop_last=True,
     )
     
-    data_loader_valid = torch.utils.data.DataLoader(
-        dataset[1], batch_size=1, sampler=valid_sampler, num_workers=config.workers, collate_fn=utils.collate_fn
-    )
+    data_loader_valid = torch.utils.data.DataLoader(dataset[1], batch_size=1, sampler=valid_sampler,
+                                                    num_workers=config.workers, collate_fn=utils.collate_fn,
+                                                    shuffle=False)
     
-    data_loader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=1, sampler=test_sampler, num_workers=config.workers, collate_fn=utils.collate_fn
-    )
+    data_loader_test = torch.utils.data.DataLoader(dataset_test, batch_size=1, sampler=test_sampler,
+                                                   num_workers=config.workers, collate_fn=utils.collate_fn,
+                                                   shuffle=False)
     
     model = torchvision.models.segmentation.__dict__[config.arch](num_classes=num_classes, aux_loss=config.aux_loss)
     
@@ -287,9 +286,9 @@ def main(config):
         print(confmat_test)
         
         acc_global_val, acc_val, iu_val = confmat_val.compute()
-        valid = {"acc_global": acc_global_val, "acc": acc_val, "iu": iu_val}
+        valid = {"iou": iu_val.mean().item() * 100}
         acc_global_test, acc_test, iu_test = confmat_test.compute()
-        test = {"acc_global": acc_global_test, "acc": acc_test, "iu": iu_test}
+        test = {"iou": iu_test.mean().item() * 100}
         
         wandb.log({
             "frozen_neurons_perc": frozen_neurons,
