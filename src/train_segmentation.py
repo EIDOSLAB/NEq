@@ -82,29 +82,37 @@ def evaluate(model, data_loader, device, num_classes, amp):
     return confmat
 
 
-def train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, device, epoch, print_freq, scaler=None):
+def train_one_epoch(config, model, criterion, optimizer, data_loader, lr_scheduler, device, epoch, print_freq, scaler):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value}"))
     header = f"Epoch: [{epoch}]"
+    target_bs = 64
+    iters_to_accumulate = target_bs // config.batch_size
+    batch = 0
+    
     for image, target in metric_logger.log_every(data_loader, print_freq, header):
         image, target = image.to(device), target.to(device)
         with torch.cuda.amp.autocast(enabled=scaler is not None):
             output = model(image)
             loss = criterion(output, target)
-        
-        optimizer.zero_grad()
-        if scaler is not None:
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            loss.backward()
-            optimizer.step()
+
+        if ((batch + 1) % iters_to_accumulate == 0) or ((batch + 1) == len(data_loader)):
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
+                
+            optimizer.zero_grad()
         
         lr_scheduler.step()
         
         metric_logger.update(loss=loss.item(), lr=optimizer.param_groups[0]["lr"])
+        
+        batch += 1
 
 
 def activate_hooks(hooks, active):
@@ -260,7 +268,7 @@ def main(config):
             train_sampler.set_epoch(epoch)
         
         activate_hooks(hooks, False)
-        train_one_epoch(model, criterion, optimizer, data_loader, lr_scheduler, device, epoch, config.print_freq,
+        train_one_epoch(config, model, criterion, optimizer, data_loader, lr_scheduler, device, epoch, config.print_freq,
                         scaler)
         
         activate_hooks(hooks, True)
