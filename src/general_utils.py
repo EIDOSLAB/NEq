@@ -53,7 +53,7 @@ class MapDataset(Dataset):
             return self.map(self.dataset[index][0], self.dataset[index][1])
         else:
             return self.map(self.dataset[index][0]), self.dataset[index][1]
-
+    
     def __len__(self):
         return len(self.dataset)
 
@@ -130,12 +130,10 @@ class Hook:
             if self.config.delta_mode == "difference":
                 delta = reshaped_output.float() - previous
             if self.config.delta_mode == "cosine":
-                delta = 1 - torch.abs(
-                    cosine_similarity(
-                        reshaped_output.float(),
-                        previous,
-                        dim=0 if self.config.mask_mode == "per-sample" else 2
-                    )
+                delta = 1 - cosine_similarity(
+                    reshaped_output.float(),
+                    previous,
+                    dim=0 if self.config.mask_mode == "per-sample" else 2
                 )
             
             if self.config.mask_mode == "per-feature" and self.config.reduction == "mean":
@@ -191,7 +189,7 @@ class Hook:
     
     def close(self) -> None:
         self.hook.remove()
-        
+    
     def activate(self, active):
         self.active = active
 
