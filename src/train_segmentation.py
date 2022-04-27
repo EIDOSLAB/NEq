@@ -87,7 +87,7 @@ def train_one_epoch(config, model, criterion, optimizer, data_loader, lr_schedul
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value}"))
     header = f"Epoch: [{epoch}]"
-    target_bs = 64
+    target_bs = 32
     iters_to_accumulate = target_bs // config.batch_size
     batch = 0
     
