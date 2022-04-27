@@ -87,7 +87,7 @@ def attach_hooks(config, model, hooks):
     for n, m in model.named_modules():
         # if n in arch_config["targets"]:
         if isinstance(m, (nn.Conv2d, nn.BatchNorm2d)):
-            hooks[n] = Hook(config, n, m)
+            hooks[n] = Hook(config, n, m, config.velocity_mu)
 
 
 class Hook:
@@ -102,6 +102,7 @@ class Hook:
         
         self.momentum = momentum
         self.delta_buffer = 0
+        self.velocity = 0
         
         self.config = config
         
@@ -175,10 +176,21 @@ class Hook:
     
     def get_delta_of_delta(self):
         reduced_activation_delta = self.get_reduced_activation_delta()
-        delta_of_delta = torch.abs(self.delta_buffer - reduced_activation_delta)
-        self.delta_buffer = reduced_activation_delta
+        delta_of_delta = self.delta_buffer - reduced_activation_delta
         
         return delta_of_delta
+    
+    def get_velocity(self):
+        self.velocity += self.get_delta_of_delta()
+        
+        return self.velocity
+    
+    def update_delta_buffer(self):
+        self.delta_buffer = self.get_reduced_activation_delta()
+    
+    def update_velocity(self):
+        self.velocity *= self.momentum
+        self.velocity -= self.get_delta_of_delta()
     
     def reset(self, previous_activations=None):
         self.samples_activation = []
@@ -235,12 +247,12 @@ def random_mask(k, reduced_activation_delta, topk, grad_mask):
 
 def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
     if config.eps != "-":
-        mask = torch.where(reduced_activation_delta <= config.eps)[0]
+        mask = torch.where(torch.abs(reduced_activation_delta) <= config.eps)[0]
     elif config.binomial:
         mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
     else:
         # How many neurons to select as "to freeze" as percentage of the total number of neurons
-        topk = int((1 - topk) * reduced_activation_delta[k].shape[0])
+        topk = int((1 - topk) * reduced_activation_delta.shape[0])
         mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
     
     if config.pinning and k in grad_mask:

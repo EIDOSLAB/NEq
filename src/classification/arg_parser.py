@@ -80,9 +80,15 @@ def get_parser():
                         help="Pinning.")
     parser.add_argument("--rollback-model", type=int2bool, choices=[0, 1], default=0,
                         help="Rollback the model configuration before a decay step.")
-    parser.add_argument("--delta-of-delta", type=int2bool, choices=[0, 1], default=0,
-                        help="Use delta of delta.")
-
+    
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--delta-of-delta", type=int2bool, choices=[0, 1], default=0,
+                       help="Use delta of delta.")
+    group.add_argument("--velocity", type=int2bool, choices=[0, 1], default=0,
+                       help="Use velocity.")
+    parser.add_argument("--velocity-mu", type=float, default=0,
+                        help="Velocity momentum")
+    
     parser.add_argument("--ckp", type=str)
     
     config = parser.parse_args()

@@ -247,7 +247,7 @@ def main(config):
     
     frozen_neurons = {"total": 0,
                       "layer": {f"{n}": 0 for n, m in model.named_modules() if
-                                isinstance(m, (nn.Conv2d, nn.BatchNorm2d))}}
+                                isinstance(m, (nn.Conv2d, nn.BatchNorm2d, nn.Linear, nn.LayerNorm))}}
     
     # Attach the hooks used to gather the PSP value
     attach_hooks(config, model, hooks)
@@ -275,14 +275,24 @@ def main(config):
         confmat_val = evaluate(model, data_loader_valid, device=device, num_classes=num_classes, amp=config.amp)
         
         if config.rollback == "optim" and isinstance(optimizer, (MaskedSGD, MaskedAdam)):
-            optimizer.param_groups[0]["masks"] = grad_mask
+            for group in optimizer.param_groups:
+                group["masks"] = grad_mask
         
         # Save the activations into the dict
         log_deltas = {}
         for k in hooks:
             # Get the masks, either random or evaluated
-            deltas = hooks[k].get_delta_of_delta() if config.delta_of_delta else hooks[k].get_reduced_activation_delta()
+            if config.delta_of_delta:
+                deltas = hooks[k].get_delta_of_delta()
+            elif config.velocity:
+                deltas = hooks[k].get_velocity()
+            else:
+                deltas = hooks[k].get_reduced_activation_delta()
+                
             get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
+            
+            hooks[k].update_velocity()
+            hooks[k].update_delta_buffer()
             hooks[k].reset()
             
             hist = np.histogram(deltas.cpu().numpy(), bins=min(512, deltas.shape[0]))
@@ -418,13 +428,30 @@ def get_args_parser(add_help=True):
                         help="Pinning.")
     parser.add_argument("--rollback-model", type=int2bool, choices=[0, 1], default=0,
                         help="Rollback the model configuration before a decay step.")
-    parser.add_argument("--delta-of-delta", type=int2bool, choices=[0, 1], default=0,
-                        help="Use delta of delta.")
+    
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--delta-of-delta", type=int2bool, choices=[0, 1], default=0,
+                       help="Use delta of delta.")
+    group.add_argument("--velocity", type=int2bool, choices=[0, 1], default=0,
+                       help="Use velocity.")
+    parser.add_argument("--velocity-mu", type=float, default=0,
+                        help="Velocity momentum")
     
     return parser
 
 
 if __name__ == "__main__":
-    args = get_args_parser().parse_args()
-    args.optim = "sgd"
-    main(args)
+    config = get_args_parser().parse_args()
+    config.optim = "sgd"
+    
+    # Just for peace of mind in the wandb table
+    if config.eps == "none":
+        config.eps = "-"
+    else:
+        config.topk = "-"
+
+    if config.binomial:
+        config.eps = "-"
+        config.topk = "-"
+        
+    main(config)

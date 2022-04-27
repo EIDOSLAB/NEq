@@ -146,8 +146,17 @@ def main(rank, config):
         log_deltas = {}
         for k in hooks:
             # Get the masks, either random or evaluated
-            deltas = hooks[k].get_delta_of_delta() if config.delta_of_delta else hooks[k].get_reduced_activation_delta()
+            if config.delta_of_delta:
+                deltas = hooks[k].get_delta_of_delta()
+            elif config.velocity:
+                deltas = hooks[k].get_velocity()
+            else:
+                deltas = hooks[k].get_reduced_activation_delta()
+                
             get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
+            
+            hooks[k].update_velocity()
+            hooks[k].update_delta_buffer()
             hooks[k].reset()
             
             hist = np.histogram(deltas.cpu().numpy(), bins=min(512, deltas.shape[0]))
