@@ -140,7 +140,8 @@ def main(rank, config):
         # If we use the MaskedSGD optimizer we replace the mask used in the last epoch with an empty one.
         # It will be filled later
         if config.rollback == "optim" and isinstance(optimizer, (MaskedSGD, MaskedAdam)):
-            optimizer.param_groups[0]["masks"] = grad_mask
+            for group in optimizer.param_groups:
+                group["masks"] = grad_mask
         
         # Save the activations into the dict
         log_deltas = {}
