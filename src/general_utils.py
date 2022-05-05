@@ -117,9 +117,11 @@ class Hook:
         
         # TODO sort this mess
         if self.config.mask_mode == "per-sample":
-            reshaped_output = output.view(output.shape[0], output.shape[1], -1).mean(dim=2)
+            reshaped_output = output.view((output.shape[0], output.shape[1], -1) if len(output.shape) > 2
+                                          else (output.shape[0], output.shape[1])).mean(dim=2)
         if self.config.mask_mode == "per-feature":
-            reshaped_output = output.view(output.shape[0], output.shape[1], -1)
+            reshaped_output = output.view((output.shape[0], output.shape[1], -1) if len(output.shape) > 2
+                                          else (output.shape[0], output.shape[1]))
         
         if self.config.dataset in ["imagenet", "coco"]:
             reshaped_output = reshaped_output.cpu()
@@ -134,10 +136,10 @@ class Hook:
                 delta = 1 - cosine_similarity(
                     reshaped_output.float(),
                     previous,
-                    dim=0 if self.config.mask_mode == "per-sample" else 2
+                    dim=0 if (self.config.mask_mode == "per-sample" or len(output.shape) <= 2) else 2
                 )
             
-            if self.config.mask_mode == "per-feature" and self.config.reduction == "mean":
+            if self.config.mask_mode == "per-feature" and self.config.reduction == "mean" and len(output.shape) > 2:
                 delta = torch.sum(delta, dim=0)
             
             if self.config.reduction == "mean":
@@ -240,7 +242,7 @@ def random_mask(k, reduced_activation_delta, topk, grad_mask):
     # How many neurons to select as "to freeze" as percentage of the total number of neurons
     topk = int((1 - topk) * reduced_activation_delta.shape[0])
     
-    mask = random.sample(range(0, reduced_activation_delta.shape[0]), topk)
+    mask = torch.tensor(random.sample(range(0, reduced_activation_delta.shape[0]), topk))
     
     grad_mask[k] = mask
 
@@ -253,7 +255,7 @@ def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
     else:
         # How many neurons to select as "to freeze" as percentage of the total number of neurons
         topk = int((1 - topk) * reduced_activation_delta.shape[0])
-        mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=False)[1]
+        mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=True)[1]
     
     if config.pinning and k in grad_mask:
         grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()

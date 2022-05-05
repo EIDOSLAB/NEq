@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 
 def int2bool(i):
@@ -23,7 +24,7 @@ def get_parser():
                         help="Reproducibility seed.")
     parser.add_argument("--root", type=str, default="/data/classification",
                         help="Dataset root folder.")
-    parser.add_argument("--amp", type=int2bool, choices=[0, 1], default=0,
+    parser.add_argument("--amp", type=int2bool, choices=[0, 1], default=1,
                         help="If True use torch.cuda.amp.")
     parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default="cuda",
                         help="Device type.")
@@ -81,17 +82,21 @@ def get_parser():
     parser.add_argument("--rollback-model", type=int2bool, choices=[0, 1], default=0,
                         help="Rollback the model configuration before a decay step.")
     
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--delta-of-delta", type=int2bool, choices=[0, 1], default=0,
+    parser.add_argument("--delta-of-delta", type=int2bool, choices=[0, 1], default=0,
                        help="Use delta of delta.")
-    group.add_argument("--velocity", type=int2bool, choices=[0, 1], default=0,
+    parser.add_argument("--velocity", type=int2bool, choices=[0, 1], default=0,
                        help="Use velocity.")
     parser.add_argument("--velocity-mu", type=float, default=0,
                         help="Velocity momentum")
     
     parser.add_argument("--ckp", type=str)
+    parser.add_argument("--project-name", type=str, default="zero-grad")
     
     config = parser.parse_args()
+    
+    if config.delta_of_delta and config.velocity:
+        print("Only one between delta-of-delta and velocity can be true")
+        sys.exit(1)
     
     # Just for peace of mind in the wandb table
     if config.eps == "none":

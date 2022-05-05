@@ -68,8 +68,8 @@ def main(rank, config):
     # Init wandb
     if rank <= 0:
         print("Initialize wandb run")
-        wandb.init(project="zero-grad", config=config)
-        os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.name))
+        wandb.init(project=config.project_name, config=config)
+        os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.id))
      
     # Init dictionaries
     hooks = {}
@@ -156,8 +156,10 @@ def main(rank, config):
                 
             get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
             
-            hooks[k].update_velocity()
-            hooks[k].update_delta_buffer()
+            if config.delta_of_delta or config.velocity:
+                hooks[k].update_velocity()
+                hooks[k].update_delta_buffer()
+                
             hooks[k].reset()
             
             hist = np.histogram(deltas.cpu().numpy(), bins=min(512, deltas.shape[0]))
@@ -194,7 +196,7 @@ def main(rank, config):
         if config.amp:
             checkpoint["scaler"] = scaler.state_dict()
         
-        torch.save(checkpoint, os.path.join("/scratch", "checkpoints", wandb.run.name, "checkpoint.pt"))
+        torch.save(checkpoint, os.path.join("/scratch", "checkpoints", wandb.run.id, "checkpoint.pt"))
         del checkpoint
         
         # Scheduler step

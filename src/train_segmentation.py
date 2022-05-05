@@ -96,6 +96,7 @@ def train_one_epoch(config, model, criterion, optimizer, data_loader, lr_schedul
         with torch.cuda.amp.autocast(enabled=scaler is not None):
             output = model(image)
             loss = criterion(output, target)
+            loss = loss / iters_to_accumulate
 
         if ((batch + 1) % iters_to_accumulate == 0) or ((batch + 1) == len(data_loader)):
             if scaler is not None:
@@ -181,10 +182,10 @@ def main(config):
         model_without_ddp = model.module
     
     params_to_optimize = [
-        {"params": [p for n, p in model_without_ddp.backbone.named_parameters() if p.requires_grad],
-         "names":  [n for n, p in model_without_ddp.backbone.named_parameters() if p.requires_grad]},
-        {"params": [p for n, p in model_without_ddp.classifier.named_parameters() if p.requires_grad],
-         "names":  [n for n, p in model_without_ddp.classifier.named_parameters() if p.requires_grad]},
+        {"params": [p for n, p in model.backbone.named_parameters() if p.requires_grad],
+         "names":  [f"backbone.{n}" for n, p in model.backbone.named_parameters() if p.requires_grad]},
+        {"params": [p for n, p in model.classifier.named_parameters() if p.requires_grad],
+         "names":  [f"classifier.{n}" for n, p in model.classifier.named_parameters() if p.requires_grad]},
     ]
     if config.aux_loss:
         params = [p for n, p in model_without_ddp.aux_classifier.named_parameters() if p.requires_grad]
@@ -238,7 +239,7 @@ def main(config):
     
     print("Initialize wandb run")
     wandb.init(project="zero-grad", config=config)
-    os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.name), exist_ok=True)
+    os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.id))
     
     # Init dictionaries
     hooks = {}
@@ -328,7 +329,7 @@ def main(config):
         if config.amp:
             checkpoint["scaler"] = scaler.state_dict()
         
-        torch.save(checkpoint, os.path.join("/scratch", "checkpoints", wandb.run.name, "checkpoint.pt"))
+        torch.save(checkpoint, os.path.join("/scratch", "checkpoints", wandb.run.id, "checkpoint.pt"))
         del checkpoint
     
     total_time = time.time() - start_time

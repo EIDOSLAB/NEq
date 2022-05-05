@@ -66,6 +66,7 @@ def run(config, model, dataloader, optimizer, scaler, device, grad_mask):
                 output = model(images)
                 
                 loss = F.cross_entropy(output, target)
+                loss = loss / iters_to_accumulate
         
         if train:
             scaler.scale(loss).backward()
