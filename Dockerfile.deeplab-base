@@ -8,7 +8,7 @@ RUN pip3 install pycocotools
 
 # Copy source files and make it owned by the group eidoslab
 # and give write permission to the group
-COPY deeplab-base /src
+COPY src/deeplab-base /src
 RUN chmod 775 /src
 RUN chown -R :1337 /src
 

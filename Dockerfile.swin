@@ -4,7 +4,7 @@ RUN pip3 install timm==0.3.2 opencv-python==4.4.0.46 termcolor==1.1.0 yacs==0.1.
 
 # Copy source files and make it owned by the group eidoslab
 # and give write permission to the group
-COPY Swin-Transformer /src
+COPY src/Swin-Transformer /src
 RUN chmod 775 /src
 RUN chown -R :1337 /src
 
