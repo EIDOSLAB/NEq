@@ -1,4 +1,5 @@
-program: main.py
+name: eps and velocity mu
+program: train_classification.py
 command:
   - ${env}
   - python3
@@ -7,17 +8,20 @@ command:
 method: grid
 parameters:
   seed:
-    values: [ 1 ]
+    values: [ 0, 2, 3 ]
   root:
     values: [ "/data/classification" ]
   amp:
     values: [ 1 ]
   device:
     values: [ "cuda" ]
+
   arch:
     values: [ "resnet32-cifar" ]
+
   epochs:
     values: [ 250 ]
+
   optim:
     values: [ "sgd" ]
   lr:
@@ -25,23 +29,40 @@ parameters:
   momentum:
     values: [ 0.9 ]
   weight-decay:
-    values: [ 1e-4 ]
+    values: [ 5e-4 ]
+
   dataset:
     values: [ "cifar10" ]
-  num-workers:
-    values: [ 8 ]
   batch-size:
     values: [ 100 ]
   val-size:
     values: [ 0.1 ]
 
   rollback:
-    values: [ "none", "manual", "optim" ]
+    values: [ "optim" ]
   topk:
-    values: [ 0.5, 0.1 ]
+    values: [ 0 ]
   random-mask:
-    values: [ 0, 1 ]
+    values: [ 0 ]
   mask-mode:
-    values: [ "per-sample", "per-feature" ]
+    values: [ "per-feature" ]
   delta-mode:
-    values: [ "difference", "cosine" ]
+    values: [ "cosine" ]
+  reduction:
+    values: [ "mean" ]
+  warmup:
+    values: [ 1 ]
+  eps:
+    values: [ 0.001 ]
+  binomial:
+    values: [ 0 ]
+  pinning:
+    values: [ 0 ]
+  rollback-model:
+    values: [ 0 ]
+  velocity:
+    values: [ 1 ]
+  velocity-mu:
+    values: [ 0.5, 0.9 ]
+  project-name:
+    values: [ "zero-grad-cifar-ablation" ]

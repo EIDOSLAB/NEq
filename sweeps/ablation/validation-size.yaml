@@ -1,5 +1,5 @@
-program: main.py
-name: zero grad eps sweep
+name: validation size
+program: train_classification.py
 command:
   - ${env}
   - python3
@@ -31,10 +31,17 @@ parameters:
   weight-decay:
     values: [ 5e-4 ]
 
+  dataset:
+    values: ["cifar10"]
+  batch-size:
+    values: [100]
+  val-size:
+    values: [0.01, 0.005, 0.001]
+
   rollback:
     values: [ "optim" ]
   topk:
-    values: [ "0" ]
+    values: [ 0 ]
   random-mask:
     values: [ 0 ]
   mask-mode:
@@ -46,6 +53,16 @@ parameters:
   warmup:
     values: [ 1 ]
   eps:
-    values: [ 5e-1, 2e-1, 1e-1, 5e-2, 2e-2, 1e-2, 5e-3, 2e-3, 1e-3 ]
+    values: [ 1e-3 ]
   binomial:
     values: [ 0 ]
+  pinning:
+    values: [ 0 ]
+  rollback-model:
+    values: [ 0 ]
+  velocity:
+    values: [ 1 ]
+  velocity-mu:
+    values: [ 0, 0.5, 0.9 ]
+  project-name:
+    values: [ "zero-grad-cifar-ablation" ]
