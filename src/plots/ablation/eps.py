@@ -3,68 +3,92 @@ from collections import defaultdict
 
 import numpy as np
 import pandas as pd
+import torch
 import wandb
 from matplotlib import pyplot as plt
+from torch import nn
 from tqdm import tqdm
 
+from classification.models import resnet32
+from plots.thop import profile
 
-def plot_scatter(runs):
+
+def plot_scatter_flops(runs, layer_ops):
     # plt.figure(figsize=(9, 3), dpi=600)
     
-    runs_acc = runs["accuracy"]
-    runs_frozen = runs["frozen"]
-
-    for eps in list(zip(runs_acc, runs_frozen)):
-        mean_acc = runs_acc[eps[0]].mean(axis=0)[-1]
-        std_acc = runs_acc[eps[0]].std(axis=0)[-1]
-        max_acc = runs_acc[eps[0]].max(axis=0)[-1]
-        min_acc = runs_acc[eps[0]].min(axis=0)[-1]
-        mean_frozen = runs_frozen[eps[1]].mean(axis=0)[-1]
-        std_frozen = runs_frozen[eps[1]].std(axis=0)[-1]
-        max_frozen = runs_frozen[eps[1]].max(axis=0)[-1]
-        min_frozen = runs_frozen[eps[1]].min(axis=0)[-1]
+    total_ops = sum(layer_ops.values())
     
-        plt.errorbar(mean_acc, mean_frozen,
-                     xerr=std_acc, yerr=std_frozen,
-                     label=f"eps={eps[0]}", alpha=0.7, fmt="o", linewidth=1)
+    for eps in runs:
+        mean = runs[eps].groupby(level=0).mean()
+        std = runs[eps].groupby(level=0).std()
+        min = runs[eps].groupby(level=0).min()
+        max = runs[eps].groupby(level=0).max()
+        
+        remaining_ops = 0
+        
+        for layer in layer_ops:
+            if f"frozen_neurons_perc.layer.{layer}" in mean:
+                ops = layer_ops[layer]
+                frozen_ops = ops * (mean[f"frozen_neurons_perc.layer.{layer}"] / 100)
+                remaining_ops += ops - frozen_ops
+        
+        plt.errorbar(remaining_ops.mean() / total_ops * 100, mean["test.accuracy.top1"].iloc[[-1]],
+                     label=f"eps={eps}", alpha=0.7, fmt="o", linewidth=1)
     
     plt.legend()
-    plt.xlabel("Classification Accuracy (%)")
+    plt.xlabel("Remaining FLOPS (%)")
+    plt.ylabel("Classification Accuracy (%)")
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_scatter_frozen(runs):
+    # plt.figure(figsize=(9, 3), dpi=600)
+    
+    for eps in runs:
+        mean = runs[eps].groupby(level=0).mean()
+        std = runs[eps].groupby(level=0).std()
+        min = runs[eps].groupby(level=0).min()
+        max = runs[eps].groupby(level=0).max()
+        
+        print(eps, mean["frozen_neurons_perc.total"].mean())
+        
+        plt.errorbar(mean["frozen_neurons_perc.total"].mean(), mean["test.accuracy.top1"].iloc[[-1]],
+                     label=f"eps={eps}", alpha=0.7, fmt="o", linewidth=1)
+    
+    plt.legend()
+    plt.xlabel("Frozen Neurons (%)")
     plt.ylabel("Classification Accuracy (%)")
     plt.tight_layout()
     plt.show()
 
 
 def plot_accuracy(runs):
-    # plt.figure(figsize=(9, 3), dpi=600)
-    
-    runs = runs["accuracy"]
 
     for eps in runs:
-        mean = runs[eps].mean(axis=0)
-        std = runs[eps].std(axis=0)
-        max = runs[eps].max(axis=0)
-        min = runs[eps].min(axis=0)
+        mean = runs[eps].groupby(level=0).mean()["test.accuracy.top1"]
+        std = runs[eps].groupby(level=0).std()["test.accuracy.top1"]
+        min = runs[eps].groupby(level=0).min()["test.accuracy.top1"]
+        max = runs[eps].groupby(level=0).max()["test.accuracy.top1"]
+        
         plt.plot(np.arange(0, mean.shape[0]), mean, label=f"eps={eps}", alpha=0.7, linewidth=1)
         plt.fill_between(x=np.arange(0, mean.shape[0]), y1=min, y2=max, alpha=0.3)
     
     plt.legend()
-    plt.xlabel("Classification Accuracy (%)")
-    plt.ylabel("Frozen Neurons (%)")
+    plt.xlabel("Epoch")
+    plt.ylabel("Classification Accuracy (%)")
     plt.tight_layout()
     plt.show()
 
 
 def plot_frozen(runs):
-    # plt.figure(figsize=(9, 3), dpi=600)
-    
-    runs = runs["frozen"]
 
     for eps in runs:
-        mean = runs[eps].mean(axis=0)
-        std = runs[eps].std(axis=0)
-        max = runs[eps].max(axis=0)
-        min = runs[eps].min(axis=0)
+        mean = runs[eps].groupby(level=0).mean()["frozen_neurons_perc.total"]
+        std = runs[eps].groupby(level=0).std()["frozen_neurons_perc.total"]
+        min = runs[eps].groupby(level=0).min()["frozen_neurons_perc.total"]
+        max = runs[eps].groupby(level=0).max()["frozen_neurons_perc.total"]
+        
         plt.plot(np.arange(0, mean.shape[0]), mean, label=f"eps={eps}", alpha=0.7, linewidth=1)
         plt.fill_between(x=np.arange(0, mean.shape[0]), y1=min, y2=max, alpha=0.3)
     
@@ -78,31 +102,43 @@ def plot_frozen(runs):
 if __name__ == '__main__':
     plt.style.context("seaborn-pastel")
     
+    model = resnet32()
+    bs = 100
+    input = torch.randn(bs, 3, 32, 32)
+    total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
+
+    layer_ops = {}
+
+    for n, m in model.named_modules():
+        if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d, nn.LayerNorm)):
+            layer_ops[n] = m._buffers["total_ops"].item() * 2
+    
     api = wandb.Api(timeout=60)
-    ids = pd.read_csv("csv/eps.csv")["ID"].tolist()
-    epsess = pd.read_csv("csv/eps.csv")["eps"].tolist()
-    epsess = set(epsess)
+    df = pd.read_csv("csv/resnet32-cifar10/eps.csv")
+    epsess = df["eps"].tolist()
+    epsess = sorted(set(epsess))
+
+    ids = defaultdict(list)
     
-    runs = {
-        "accuracy": {eps: [] for eps in epsess},
-        "frozen":   {eps: [] for eps in epsess}
-    }
-    
-    for id in tqdm(ids):
-        run = api.run(f"andreabrg/zero-grad-cifar-ablation/{id}")
-        config = json.loads(run.json_config)
-        df = run.history()
-        df = df[["test.accuracy.top1", "frozen_neurons_perc.total"]]
-        df["seed"] = config["seed"]["value"]
-        df["eps"] = config["eps"]["value"]
+    for eps in epsess:
+        ids[eps] = df.loc[df['eps'] == eps]["ID"].tolist()
         
-        runs["accuracy"][config["eps"]["value"]].append(df["test.accuracy.top1"].values*100)
-        runs["frozen"][config["eps"]["value"]].append(df["frozen_neurons_perc.total"].values)
+    runs = defaultdict()
     
-    for measure in runs:
-        for eps in runs[measure]:
-            runs[measure][eps] = np.stack(runs[measure][eps])
+    epsess = [0.001]
     
-    plot_scatter(runs)
+    for eps in tqdm(epsess):
+        dfs = []
+        for id in tqdm(ids[eps]):
+            run = api.run(f"andreabrg/zero-grad-cifar-ablation/{id}")
+            config = json.loads(run.json_config)
+            df = run.history()
+            dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.accuracy.top1"]])
+            
+        runs[eps] = pd.concat(dfs)
+        runs[eps]["test.accuracy.top1"] *= 100
+    
+    plot_scatter_flops(runs, layer_ops)
+    plot_scatter_frozen(runs)
     plot_accuracy(runs)
     plot_frozen(runs)
