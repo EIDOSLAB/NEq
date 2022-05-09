@@ -1,4 +1,4 @@
-name: eps and velocity mu
+name: velocity mu - seed 0, 1, 2, 3
 program: train_classification.py
 command:
   - ${env}
@@ -8,7 +8,7 @@ command:
 method: grid
 parameters:
   seed:
-    values: [ 0, 2, 3 ]
+    values: [ 0, 1, 2, 3 ]
   root:
     values: [ "/data/classification" ]
   amp:
@@ -63,6 +63,6 @@ parameters:
   velocity:
     values: [ 1 ]
   velocity-mu:
-    values: [ 0.5, 0.9 ]
+    values: [ 0, 0.5, 0.9 ]
   project-name:
     values: [ "zero-grad-cifar-ablation" ]
