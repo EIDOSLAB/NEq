@@ -7,6 +7,7 @@ import torch
 import wandb
 from matplotlib import pyplot as plt
 from torch import nn
+from torchvision.models import resnet18
 from tqdm import tqdm
 
 from classification.models import resnet32
@@ -45,16 +46,15 @@ def plot_scatter_flops(runs, layer_ops):
 def plot_scatter_frozen(runs):
     # plt.figure(figsize=(9, 3), dpi=600)
     
-    for eps in runs:
-        mean = runs[eps].groupby(level=0).mean()
-        std = runs[eps].groupby(level=0).std()
-        min = runs[eps].groupby(level=0).min()
-        max = runs[eps].groupby(level=0).max()
-        
-        print(eps, mean["frozen_neurons_perc.total"].mean())
-        
-        plt.errorbar(mean["frozen_neurons_perc.total"].mean(), mean["test.accuracy.top1"].iloc[[-1]],
-                     label=f"eps={eps}", alpha=0.7, fmt="o", linewidth=1)
+    mean = runs[eps].groupby(level=0).mean()
+    std = runs[eps].groupby(level=0).std()
+    min = runs[eps].groupby(level=0).min()
+    max = runs[eps].groupby(level=0).max()
+    
+    print(eps, mean["frozen_neurons_perc.total"].mean())
+    
+    plt.errorbar(mean["frozen_neurons_perc.total"].mean(), mean["test.accuracy.top1"].iloc[[-1]],
+                 label=f"eps={eps}", alpha=0.7, fmt="o", linewidth=1)
     
     plt.legend()
     plt.xlabel("Frozen Neurons (%)")
@@ -102,8 +102,8 @@ def plot_frozen(runs):
 if __name__ == '__main__':
     plt.style.context("seaborn-pastel")
     
-    model = resnet32()
-    bs = 100
+    model = resnet18()
+    bs = 256
     input = torch.randn(bs, 3, 32, 32)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
 
@@ -114,29 +114,15 @@ if __name__ == '__main__':
             layer_ops[n] = m._buffers["total_ops"].item() * 2
     
     api = wandb.Api(timeout=60)
-    df = pd.read_csv("csv/resnet32-cifar10/eps.csv")
-    epsess = df["eps"].tolist()
-    epsess = sorted(set(epsess))
-
-    ids = defaultdict(list)
     
-    for eps in epsess:
-        ids[eps] = df.loc[df['eps'] == eps]["ID"].tolist()
-        
-    runs = defaultdict()
+    id = "hm02748q"
+    run = api.run(f"andreabrg/zero-grad/{id}")
     
-    for eps in tqdm(epsess):
-        dfs = []
-        for id in tqdm(ids[eps]):
-            run = api.run(f"andreabrg/zero-grad-cifar-ablation/{id}")
-            config = json.loads(run.json_config)
-            df = run.history()
-            dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.accuracy.top1"]])
-            
-        runs[eps] = pd.concat(dfs)
-        runs[eps]["test.accuracy.top1"] *= 100
+    config = json.loads(run.json_config)
+    df = run.history()
+    print(df["frozen_neurons_perc.total"].mean())
     
-    plot_scatter_flops(runs, layer_ops)
-    plot_scatter_frozen(runs)
-    plot_accuracy(runs)
-    plot_frozen(runs)
+    plot_scatter_flops(df, layer_ops)
+    plot_scatter_frozen(df)
+    plot_accuracy(df)
+    plot_frozen(df)
