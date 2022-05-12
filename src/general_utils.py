@@ -248,8 +248,8 @@ def random_mask(k, reduced_activation_delta, topk, grad_mask):
 
 
 def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
-    if config.eps != "-":
-        mask = torch.where(torch.abs(reduced_activation_delta) <= config.eps)[0]
+    if config.topk != "-":
+        mask = torch.where(torch.abs(reduced_activation_delta) <= config.topk)[0]
     elif config.binomial:
         mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
     else:

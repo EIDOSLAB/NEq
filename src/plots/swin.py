@@ -100,32 +100,8 @@ def plot_frozen(runs):
 
 
 if __name__ == '__main__':
-    plt.style.context("seaborn-pastel")
-    
-    model = resnet18()
-    bs = 32
-    input = torch.randn(bs, 3, 32, 32)
-    total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
-    
-    layer_ops = {}
-    
-    for n, m in model.named_modules():
-        if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d, nn.LayerNorm)):
-            layer_ops[n] = m._buffers["total_ops"].item() * 2
-    
     api = wandb.Api(timeout=60)
-    df = pd.read_csv("csv/deeplab-coco/runs.csv")
-    
-    ids = df["ID"].tolist()
-    
-    runs = defaultdict()
-    
-    dfs = []
-    for id in tqdm(ids):
-        run = api.run(f"andreabrg/zero-grad/{id}")
-        config = json.loads(run.json_config)
-        df = run.history()
-        dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
-    
-    runs = pd.concat(dfs)
-    runs["test.accuracy.top1"] *= 100
+    run = api.run(f"andreabrg/zero-grad/2shwi0b3")
+    config = json.loads(run.json_config)
+    df = run.history()
+    print(df["frozen_neurons_perc.total"].mean())

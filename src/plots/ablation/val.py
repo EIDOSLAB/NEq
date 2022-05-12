@@ -18,11 +18,11 @@ def plot_scatter_flops(runs, layer_ops):
     
     total_ops = sum(layer_ops.values())
     
-    for eps in runs:
-        mean = runs[eps].groupby(level=0).mean()
-        std = runs[eps].groupby(level=0).std()
-        min = runs[eps].groupby(level=0).min()
-        max = runs[eps].groupby(level=0).max()
+    for val_size in runs:
+        mean = runs[val_size].groupby(level=0).mean()
+        std = runs[val_size].groupby(level=0).std()
+        min = runs[val_size].groupby(level=0).min()
+        max = runs[val_size].groupby(level=0).max()
         
         remaining_ops = 0
         
@@ -33,14 +33,15 @@ def plot_scatter_flops(runs, layer_ops):
                 remaining_ops += ops - frozen_ops
         
         plt.errorbar(100 - (remaining_ops.mean() / total_ops * 100), mean["test.accuracy.top1"].iloc[[-1]],
-                     label=f"eps={eps}", yerr=std["test.accuracy.top1"].iloc[[-1]], alpha=0.7, fmt="o", linewidth=1)
+                     label=f"size={val_size}", yerr=std["test.accuracy.top1"].iloc[[-1]], alpha=0.7, fmt="o",
+                     linewidth=1)
     
-    plt.legend(ncol=3)
+    plt.legend(ncol=4)
     plt.xlabel("Saved FLOPS (%)")
     plt.ylabel("Classification Accuracy (%)")
     plt.tight_layout()
-    plt.savefig("eps.png", dpi=300)
-    plt.savefig("eps.pdf", dpi=300)
+    plt.savefig("val.png", dpi=300)
+    plt.savefig("val.pdf", dpi=300)
     plt.clf()
 
 
@@ -59,27 +60,27 @@ def main():
             layer_ops[n] = m._buffers["total_ops"].item() * 2
     
     api = wandb.Api(timeout=60)
-    df = pd.read_csv("../csv/resnet32-cifar10/ablation/eps.csv")
-    epsess = df["eps"].tolist()
-    epsess = sorted(set(epsess))
+    df = pd.read_csv("../csv/resnet32-cifar10/ablation/val.csv")
+    vals = df["val-size"].tolist()
+    vals = sorted(set(vals))
     
     ids = defaultdict(list)
     
-    for eps in epsess:
-        ids[eps] = df.loc[df['eps'] == eps]["ID"].tolist()
+    for val_size in vals:
+        ids[val_size] = df.loc[df['val-size'] == val_size]["ID"].tolist()
     
     runs = defaultdict()
     
-    for eps in tqdm(epsess):
+    for val_size in tqdm(vals):
         dfs = []
-        for id in tqdm(ids[eps]):
+        for id in tqdm(ids[val_size]):
             run = api.run(f"andreabrg/zero-grad-cifar-ablation/{id}")
             config = json.loads(run.json_config)
             df = run.history()
             dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.accuracy.top1"]])
         
-        runs[eps] = pd.concat(dfs)
-        runs[eps]["test.accuracy.top1"] *= 100
+        runs[val_size] = pd.concat(dfs)
+        runs[val_size]["test.accuracy.top1"] *= 100
     
     plot_scatter_flops(runs, layer_ops)
 
