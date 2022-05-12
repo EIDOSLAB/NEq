@@ -70,7 +70,7 @@ def main(rank, config):
         print("Initialize wandb run")
         wandb.init(project=config.project_name, config=config)
         os.makedirs(os.path.join("/scratch", "checkpoints", wandb.run.id))
-     
+    
     # Init dictionaries
     hooks = {}
     previous_activations = {}
@@ -144,7 +144,7 @@ def main(rank, config):
                 group["masks"] = grad_mask
         
         # Save the activations into the dict
-        log_deltas = {}
+        log_deltas = {"deltas": {}, "dod": {}}
         for k in hooks:
             # Get the masks, either random or evaluated
             if config.delta_of_delta:
@@ -154,16 +154,20 @@ def main(rank, config):
             else:
                 deltas = hooks[k].get_reduced_activation_delta()
                 
+            d = hooks[k].get_reduced_activation_delta()
+            
             get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
             
             if config.delta_of_delta or config.velocity:
                 hooks[k].update_velocity()
                 hooks[k].update_delta_buffer()
-                
+            
             hooks[k].reset()
             
-            hist = np.histogram(deltas.cpu().numpy(), bins=min(512, deltas.shape[0]))
-            log_deltas[f"{k}"] = wandb.Histogram(np_histogram=hist)
+            log_deltas["dod"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(deltas.cpu().numpy(),
+                                                                                  bins=min(512, deltas.shape[0])))
+            log_deltas["deltas"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(d.cpu().numpy(),
+                                                                                     bins=min(512, deltas.shape[0])))
         
         # Test step
         activate_hooks(hooks, False)
