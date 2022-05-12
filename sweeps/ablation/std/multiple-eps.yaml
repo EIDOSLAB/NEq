@@ -1,4 +1,4 @@
-name: delta
+name: eps for stochastic comparison
 program: train_classification.py
 command:
   - ${env}
@@ -8,7 +8,7 @@ command:
 method: grid
 parameters:
   seed:
-    values: [ 1 ]
+    values: [ 0, 1, 2, 3 ]
   root:
     values: [ "/data/classification" ]
   amp:
@@ -32,11 +32,11 @@ parameters:
     values: [ 5e-4 ]
 
   dataset:
-    values: ["cifar10"]
+    values: [ "cifar10" ]
   batch-size:
-    values: [100]
+    values: [ 100 ]
   val-size:
-    values: [0.001]
+    values: [ 0.001 ]
 
   rollback:
     values: [ "optim" ]
@@ -53,18 +53,16 @@ parameters:
   warmup:
     values: [ 1 ]
   eps:
-    values: [ 1e-3 ]
+    values: [ 0.5, 0.1, 0.05, 0.01, 0.005, 0.0005, 0.0001, 0 ]
   binomial:
     values: [ 0 ]
   pinning:
     values: [ 0 ]
   rollback-model:
     values: [ 0 ]
-  delta-of-delta:
-    values: [ 0 ]
   velocity:
-    values: [ 0 ]
+    values: [ 1 ]
   velocity-mu:
-    values: [ 0 ]
+    values: [ 0.5 ]
   project-name:
     values: [ "zero-grad-cifar-ablation" ]
