@@ -104,8 +104,9 @@ if __name__ == '__main__':
     
     for n, m in model.named_modules():
         if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d, nn.LayerNorm)):
-            layer_ops[n] = m._buffers["total_ops"].item() * 2
-            neurons[n] = m.weight.shape[0]
+            if n != "head":
+                layer_ops[n] = m._buffers["total_ops"].item() * 2
+                neurons[n] = m.weight.shape[0]
     
     api = wandb.Api(timeout=60)
     df_ids = pd.read_csv("csv/swin-imagenet/stoc-vs-eps.csv")
@@ -135,7 +136,6 @@ if __name__ == '__main__':
             dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.accuracy.top1"]])
         
         stoc_runs[topk] = pd.concat(dfs)
-        stoc_runs[topk]["test.accuracy.top1"] *= 100
     
     for eps in tqdm(epsess):
         dfs = []
@@ -146,6 +146,5 @@ if __name__ == '__main__':
             dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.accuracy.top1"]])
         
         eps_runs[eps] = pd.concat(dfs)
-        eps_runs[eps]["test.accuracy.top1"] *= 100
     
     build_table(stoc_runs, eps_runs, layer_ops, neurons)

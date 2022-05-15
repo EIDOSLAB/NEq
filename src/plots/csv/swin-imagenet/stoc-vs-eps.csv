@@ -1,0 +1,4 @@
+"Name","Tags","ID","arch","dataset","batch_size","val_size","epochs","lr","weight_decay","optim","topk","delta_of_delta","velocity","velocity_mu","eps"
+"swift-monkey-34","","1oyx88w4","swin","imagenet","64","0.001","","","","adamw","0.5","0","true","0.5","-"
+"hokey-fleet-28","","2shwi0b3","swin","imagenet","64","0.001","","","","adamw","-","0","true","0.5","0.001"
+"treasured-river-36","","32ypn417","swin","imagenet","64","0.001","","","","adamw","0.8","0","true","0.5","-"
