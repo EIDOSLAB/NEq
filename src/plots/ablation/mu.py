@@ -13,38 +13,8 @@ from classification.models import resnet32
 from plots.thop import profile
 
 
-def plot_scatter_flops(runs, layer_ops):
-    # plt.figure(figsize=(9, 3), dpi=600)
-    
-    total_ops = sum(layer_ops.values())
-    
-    for mu in runs:
-        mean = runs[mu].groupby(level=0).mean()
-        std = runs[mu].groupby(level=0).std()
-        min = runs[mu].groupby(level=0).min()
-        max = runs[mu].groupby(level=0).max()
-        
-        remaining_ops = 0
-        
-        for layer in layer_ops:
-            if f"frozen_neurons_perc.layer.{layer}" in mean:
-                ops = layer_ops[layer]
-                frozen_ops = ops * (mean[f"frozen_neurons_perc.layer.{layer}"] / 100)
-                remaining_ops += ops - frozen_ops
-        
-        plt.errorbar(100 - (remaining_ops.mean() / total_ops * 100), mean["test.accuracy.top1"].iloc[[-1]],
-                     label=f"mu={mu}", yerr=std["test.accuracy.top1"].iloc[[-1]], alpha=0.7, fmt="o", linewidth=1)
-    
-    plt.legend(ncol=1)
-    plt.xlabel("Saved FLOPS (%)")
-    plt.ylabel("Classification Accuracy (%)")
-    plt.tight_layout()
-    plt.savefig("mu-scatter.png", dpi=300)
-    plt.savefig("mu-scatter.pdf", dpi=300)
-    plt.clf()
-
-
 def plot_frozen(runs, layer_ops):
+    plt.figure(figsize=(9, 3), dpi=600)
     total_ops = sum(layer_ops.values())
     
     for mu in runs:
@@ -58,11 +28,11 @@ def plot_frozen(runs, layer_ops):
         y2 = []
         
         for i in range(len(mean.index)):
-        
+            
             remaining_ops = 0
             remaining_ops_min = 0
             remaining_ops_max = 0
-        
+            
             for layer in layer_ops:
                 if f"frozen_neurons_perc.layer.{layer}" in mean:
                     ops = layer_ops[layer]
@@ -74,17 +44,17 @@ def plot_frozen(runs, layer_ops):
                     
                     frozen_ops = ops * (max[f"frozen_neurons_perc.layer.{layer}"].iloc[[i]].values[0] / 100)
                     remaining_ops_max += ops - frozen_ops
-                    
-            y.append(100 - (remaining_ops / total_ops * 100))
-            y1.append(100 - (remaining_ops_min / total_ops * 100))
-            y2.append(100 - (remaining_ops_max / total_ops * 100))
             
-        plt.plot(np.arange(0, mean.shape[0]), y, label=f"mu={mu}", alpha=0.7, linewidth=1)
-        plt.fill_between(x=np.arange(0, mean.shape[0]), y1=y1, y2=y2, alpha=0.3)
+            y.append(remaining_ops)
+            y1.append(remaining_ops_min)
+            y2.append(remaining_ops_max)
+        
+        plt.plot(np.arange(0, mean.shape[0]), y, label=f"$\mu_{{eq}}={mu}$", alpha=0.7, linewidth=1)
+        plt.fill_between(x=np.arange(0, mean.shape[0]), y1=y1, y2=y2, alpha=0.1)
     
     plt.legend(ncol=1)
     plt.xlabel("Epochs")
-    plt.ylabel("Saved FLOPS (%)")
+    plt.ylabel("FLOPs")
     plt.tight_layout()
     plt.savefig("mu-line.png", dpi=300)
     plt.savefig("mu-line.pdf", dpi=300)
@@ -128,7 +98,6 @@ def main():
         runs[mu] = pd.concat(dfs)
         runs[mu]["test.accuracy.top1"] *= 100
     
-    plot_scatter_flops(runs, layer_ops)
     plot_frozen(runs, layer_ops)
 
 

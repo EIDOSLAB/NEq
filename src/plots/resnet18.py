@@ -11,11 +11,15 @@ from torchvision.models import resnet18
 from tqdm import tqdm
 
 from classification.models import resnet32
-from plots.thop import profile
+from plots.thop import profile, clever_format
 
 
-def build_table(stoc_runs, eps_runs, layer_ops):
+def build_table(stoc_runs, eps_runs, layer_ops, neurons):
     total_ops = sum(layer_ops.values())
+    total_neurons = sum(neurons.values())
+    
+    print(clever_format(total_ops))
+    print(total_neurons)
     
     for topk in stoc_runs:
         mean = stoc_runs[topk].groupby(level=0).mean()
@@ -24,22 +28,26 @@ def build_table(stoc_runs, eps_runs, layer_ops):
         max = stoc_runs[topk].groupby(level=0).max()
         
         remaining_ops = 0
+        remaining_neurons = 0
         
         for layer in layer_ops:
             if f"frozen_neurons_perc.layer.{layer}" in mean:
                 ops = layer_ops[layer]
                 frozen_ops = ops * (mean[f"frozen_neurons_perc.layer.{layer}"] / 100)
                 remaining_ops += ops - frozen_ops
+                
+                remaining_neurons += (neurons[layer] * ((100 - mean[f"frozen_neurons_perc.layer.{layer}"]) / 100))
         
-        approach = "Stochastic"
-        frozen_neurons = round(mean[f"frozen_neurons_perc.total"].mean(), 2)
-        saved_flops = round(100 - (remaining_ops.mean() / total_ops * 100), 2)
+        approach = f"Stochastic (topk={topk})"
+        trained_neurons = int(remaining_neurons.mean())
+        backprop_flops = round(remaining_ops.mean(), 2)
+        backprop_flops_delta = round(100 - (remaining_ops.mean() / total_ops * 100), 2)
         accuracy = round(mean[f"test.accuracy.top1"].iloc[[-1]].values[0], 2)
         
         print(f"{approach} &"
-              f" {frozen_neurons:.2f} &"
-              f" {saved_flops:.2f}  &"
-              f" {accuracy:.2f} ")
+              f" {trained_neurons} $\pm$ {round(std['frozen_neurons_perc.total'].mean(), 2)} &"
+              f" {clever_format(backprop_flops)}  $\pm$ {round(std['frozen_neurons_perc.total'].mean(), 2)} (-{backprop_flops_delta}\%) &"
+              f" {accuracy:.2f} $\pm$ {round(std['test.accuracy.top1'].iloc[[-1]].values[0], 2)}")
     
     for eps in eps_runs:
         mean = eps_runs[eps].groupby(level=0).mean()
@@ -48,22 +56,26 @@ def build_table(stoc_runs, eps_runs, layer_ops):
         max = eps_runs[eps].groupby(level=0).max()
         
         remaining_ops = 0
+        remaining_neurons = 0
         
         for layer in layer_ops:
             if f"frozen_neurons_perc.layer.{layer}" in mean:
                 ops = layer_ops[layer]
                 frozen_ops = ops * (mean[f"frozen_neurons_perc.layer.{layer}"] / 100)
                 remaining_ops += ops - frozen_ops
+                
+                remaining_neurons += (neurons[layer] * ((100 - mean[f"frozen_neurons_perc.layer.{layer}"]) / 100))
         
         approach = f"Ours (\eps={eps})"
-        frozen_neurons = round(mean[f"frozen_neurons_perc.total"].mean(), 2)
-        saved_flops = round(100 - (remaining_ops.mean() / total_ops * 100), 2)
+        trained_neurons = int(remaining_neurons.mean())
+        backprop_flops = round(remaining_ops.mean(), 2)
+        backprop_flops_delta = round(100 - (remaining_ops.mean() / total_ops * 100), 2)
         accuracy = round(mean[f"test.accuracy.top1"].iloc[[-1]].values[0], 2)
         
         print(f"{approach} &"
-              f" {frozen_neurons:.2f} &"
-              f" {saved_flops:.2f} &"
-              f" {accuracy:.2f} ")
+              f" {trained_neurons} &"
+              f" {clever_format(backprop_flops)} (-{backprop_flops_delta}\%) &"
+              f" {accuracy:.2f}")
 
 
 if __name__ == '__main__':
@@ -75,10 +87,12 @@ if __name__ == '__main__':
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     
     layer_ops = {}
+    neurons = {}
     
     for n, m in model.named_modules():
         if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d, nn.LayerNorm)):
             layer_ops[n] = m._buffers["total_ops"].item() * 2
+            neurons[n] = m.weight.shape[0]
     
     api = wandb.Api(timeout=60)
     df_ids = pd.read_csv("csv/resnet18-imagenet/stoc-vs-eps.csv")
@@ -121,4 +135,4 @@ if __name__ == '__main__':
         eps_runs[eps] = pd.concat(dfs)
         eps_runs[eps]["test.accuracy.top1"] *= 100
     
-    build_table(stoc_runs, eps_runs, layer_ops)
+    build_table(stoc_runs, eps_runs, layer_ops, neurons)

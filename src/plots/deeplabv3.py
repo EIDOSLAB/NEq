@@ -4,6 +4,7 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 import torch
+import torchvision
 import wandb
 from matplotlib import pyplot as plt
 from torch import nn
@@ -11,121 +12,126 @@ from torchvision.models import resnet18
 from tqdm import tqdm
 
 from classification.models import resnet32
-from plots.thop import profile
+from plots.thop import profile, clever_format
 
 
-def plot_scatter_flops(runs, layer_ops):
-    # plt.figure(figsize=(9, 3), dpi=600)
-    
+def build_table(stoc_runs, eps_runs, layer_ops, neurons):
     total_ops = sum(layer_ops.values())
+    total_neurons = sum(neurons.values())
     
-    for eps in runs:
-        mean = runs[eps].groupby(level=0).mean()
-        std = runs[eps].groupby(level=0).std()
-        min = runs[eps].groupby(level=0).min()
-        max = runs[eps].groupby(level=0).max()
+    print(clever_format(total_ops))
+    print(total_neurons)
+    
+    for topk in stoc_runs:
+        mean = stoc_runs[topk].groupby(level=0).mean()
+        std = stoc_runs[topk].groupby(level=0).std()
+        min = stoc_runs[topk].groupby(level=0).min()
+        max = stoc_runs[topk].groupby(level=0).max()
         
         remaining_ops = 0
+        remaining_neurons = 0
         
         for layer in layer_ops:
             if f"frozen_neurons_perc.layer.{layer}" in mean:
                 ops = layer_ops[layer]
                 frozen_ops = ops * (mean[f"frozen_neurons_perc.layer.{layer}"] / 100)
                 remaining_ops += ops - frozen_ops
+                
+                remaining_neurons += (neurons[layer] * ((100 - mean[f"frozen_neurons_perc.layer.{layer}"]) / 100))
         
-        plt.errorbar(remaining_ops.mean() / total_ops * 100, mean["test.accuracy.top1"].iloc[[-1]],
-                     label=f"eps={eps}", alpha=0.7, fmt="o", linewidth=1)
-    
-    plt.legend()
-    plt.xlabel("Remaining FLOPS (%)")
-    plt.ylabel("Classification Accuracy (%)")
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_scatter_frozen(runs):
-    # plt.figure(figsize=(9, 3), dpi=600)
-    
-    mean = runs[eps].groupby(level=0).mean()
-    std = runs[eps].groupby(level=0).std()
-    min = runs[eps].groupby(level=0).min()
-    max = runs[eps].groupby(level=0).max()
-    
-    print(eps, mean["frozen_neurons_perc.total"].mean())
-    
-    plt.errorbar(mean["frozen_neurons_perc.total"].mean(), mean["test.accuracy.top1"].iloc[[-1]],
-                 label=f"eps={eps}", alpha=0.7, fmt="o", linewidth=1)
-    
-    plt.legend()
-    plt.xlabel("Frozen Neurons (%)")
-    plt.ylabel("Classification Accuracy (%)")
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_accuracy(runs):
-
-    for eps in runs:
-        mean = runs[eps].groupby(level=0).mean()["test.accuracy.top1"]
-        std = runs[eps].groupby(level=0).std()["test.accuracy.top1"]
-        min = runs[eps].groupby(level=0).min()["test.accuracy.top1"]
-        max = runs[eps].groupby(level=0).max()["test.accuracy.top1"]
+        approach = f"Stochastic (topk={topk})"
+        trained_neurons = int(remaining_neurons.mean())
+        backprop_flops = round(remaining_ops.mean(), 2)
+        backprop_flops_delta = round(100 - (remaining_ops.mean() / total_ops * 100), 2)
+        accuracy = round(mean[f"test.iou"].iloc[[-1]].values[0], 2)
         
-        plt.plot(np.arange(0, mean.shape[0]), mean, label=f"eps={eps}", alpha=0.7, linewidth=1)
-        plt.fill_between(x=np.arange(0, mean.shape[0]), y1=min, y2=max, alpha=0.3)
+        print(f"{approach} &"
+              f" {trained_neurons} $\pm$ {round(std['frozen_neurons_perc.total'].mean(), 2)} &"
+              f" {clever_format(backprop_flops)}  $\pm$ {round(std['frozen_neurons_perc.total'].mean(), 2)} (-{backprop_flops_delta}\%) &"
+              f" {accuracy:.2f} $\pm$ {round(std['test.iou'].iloc[[-1]].values[0], 2)}")
     
-    plt.legend()
-    plt.xlabel("Epoch")
-    plt.ylabel("Classification Accuracy (%)")
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_frozen(runs):
-
-    for eps in runs:
-        mean = runs[eps].groupby(level=0).mean()["frozen_neurons_perc.total"]
-        std = runs[eps].groupby(level=0).std()["frozen_neurons_perc.total"]
-        min = runs[eps].groupby(level=0).min()["frozen_neurons_perc.total"]
-        max = runs[eps].groupby(level=0).max()["frozen_neurons_perc.total"]
+    for eps in eps_runs:
+        mean = eps_runs[eps].groupby(level=0).mean()
+        std = eps_runs[eps].groupby(level=0).std()
+        min = eps_runs[eps].groupby(level=0).min()
+        max = eps_runs[eps].groupby(level=0).max()
         
-        plt.plot(np.arange(0, mean.shape[0]), mean, label=f"eps={eps}", alpha=0.7, linewidth=1)
-        plt.fill_between(x=np.arange(0, mean.shape[0]), y1=min, y2=max, alpha=0.3)
-    
-    plt.legend()
-    plt.xlabel("Epoch")
-    plt.ylabel("Frozen Neurons (%)")
-    plt.tight_layout()
-    plt.show()
+        remaining_ops = 0
+        remaining_neurons = 0
+        
+        for layer in layer_ops:
+            if f"frozen_neurons_perc.layer.{layer}" in mean:
+                ops = layer_ops[layer]
+                frozen_ops = ops * (mean[f"frozen_neurons_perc.layer.{layer}"] / 100)
+                remaining_ops += ops - frozen_ops
+                
+                remaining_neurons += (neurons[layer] * ((100 - mean[f"frozen_neurons_perc.layer.{layer}"]) / 100))
+        
+        approach = f"Ours (\eps={eps})"
+        trained_neurons = int(remaining_neurons.mean())
+        backprop_flops = round(remaining_ops.mean(), 2)
+        backprop_flops_delta = round(100 - (remaining_ops.mean() / total_ops * 100), 2)
+        accuracy = round(mean[f"test.iou"].iloc[[-1]].values[0], 2)
+        
+        print(f"{approach} &"
+              f" {trained_neurons} &"
+              f" {clever_format(backprop_flops)} (-{backprop_flops_delta}\%) &"
+              f" {accuracy:.2f}")
 
 
 if __name__ == '__main__':
     plt.style.context("seaborn-pastel")
     
-    model = resnet18()
+    model = torchvision.models.segmentation.deeplabv3_resnet50(num_classes=21, aux_loss=True)
     bs = 32
-    input = torch.randn(bs, 3, 32, 32)
+    input = torch.randn(bs, 3, 480, 480)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     
     layer_ops = {}
+    neurons = {}
     
     for n, m in model.named_modules():
         if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d, nn.LayerNorm)):
             layer_ops[n] = m._buffers["total_ops"].item() * 2
+            neurons[n] = m.weight.shape[0]
     
     api = wandb.Api(timeout=60)
-    df = pd.read_csv("csv/deeplab-coco/runs.csv")
+    df_ids = pd.read_csv("csv/deeplab-coco/stoc-vs-eps.csv")
+    topks = [v for v in df_ids["topk"].tolist() if v != "-"]
+    topks = sorted(set(topks), reverse=True)
     
-    ids = df["ID"].tolist()
+    epsess = [v for v in df_ids["eps"].tolist() if v != "-"]
+    epsess = sorted(set(epsess), reverse=True)
     
-    runs = defaultdict()
+    stoc_ids = defaultdict(list)
+    eps_ids = defaultdict(list)
     
-    dfs = []
-    for id in tqdm(ids):
-        run = api.run(f"andreabrg/zero-grad/{id}")
-        config = json.loads(run.json_config)
-        df = run.history()
-        dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
+    for topk in topks:
+        stoc_ids[topk] = df_ids.loc[df_ids['topk'] == topk]["ID"].tolist()
+    for eps in epsess:
+        eps_ids[eps] = df_ids.loc[df_ids['eps'] == eps]["ID"].tolist()
     
-    runs = pd.concat(dfs)
-    runs["test.accuracy.top1"] *= 100
+    stoc_runs = defaultdict()
+    eps_runs = defaultdict()
+    
+    for topk in tqdm(topks):
+        dfs = []
+        for id in tqdm(stoc_ids[topk]):
+            run = api.run(f"andreabrg/zero-grad/{id}")
+            config = json.loads(run.json_config)
+            df = run.history()
+            dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
+        
+        stoc_runs[topk] = pd.concat(dfs)
+    
+    for eps in tqdm(epsess):
+        dfs = []
+        for id in tqdm(eps_ids[eps]):
+            run = api.run(f"andreabrg/zero-grad/{id}")
+            config = json.loads(run.json_config)
+            df = run.history()
+            dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
+        
+        eps_runs[eps] = pd.concat(dfs)
+    
+    build_table(stoc_runs, eps_runs, layer_ops, neurons)

@@ -13,10 +13,11 @@ from classification.models import resnet32
 from plots.thop import profile
 
 
-def plot_scatter_flops(runs, layer_ops):
-    # plt.figure(figsize=(9, 3), dpi=600)
-    
+def plot_scatter_flops(runs, layer_ops, neurons):
+    plt.figure(figsize=(9, 3), dpi=600)
+
     total_ops = sum(layer_ops.values())
+    total_neurons = sum(neurons.values())
     
     for eps in runs:
         mean = runs[eps].groupby(level=0).mean()
@@ -25,18 +26,23 @@ def plot_scatter_flops(runs, layer_ops):
         max = runs[eps].groupby(level=0).max()
         
         remaining_ops = 0
-        
+        remaining_neurons = 0
+
         for layer in layer_ops:
             if f"frozen_neurons_perc.layer.{layer}" in mean:
                 ops = layer_ops[layer]
                 frozen_ops = ops * (mean[f"frozen_neurons_perc.layer.{layer}"] / 100)
                 remaining_ops += ops - frozen_ops
         
-        plt.errorbar(100 - (remaining_ops.mean() / total_ops * 100), mean["test.accuracy.top1"].iloc[[-1]],
-                     label=f"eps={eps}", yerr=std["test.accuracy.top1"].iloc[[-1]], alpha=0.7, fmt="o", linewidth=1)
+                remaining_neurons += (neurons[layer] * ((100 - mean[f"frozen_neurons_perc.layer.{layer}"]) / 100))
+
+        backprop_flops = round(remaining_ops.mean(), 2)
+        
+        plt.errorbar(backprop_flops, mean["test.accuracy.top1"].iloc[[-1]],
+                     label=f"$\epsilon = {eps}$", yerr=std["test.accuracy.top1"].iloc[[-1]], alpha=0.7, fmt="o", linewidth=1)
     
     plt.legend(ncol=3)
-    plt.xlabel("Saved FLOPS (%)")
+    plt.xlabel("FLOPs")
     plt.ylabel("Classification Accuracy (%)")
     plt.tight_layout()
     plt.savefig("eps.png", dpi=300)
@@ -53,10 +59,12 @@ def main():
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     
     layer_ops = {}
+    neurons = {}
     
     for n, m in model.named_modules():
         if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d, nn.LayerNorm)):
             layer_ops[n] = m._buffers["total_ops"].item() * 2
+            neurons[n] = m.weight.shape[0]
     
     api = wandb.Api(timeout=60)
     df = pd.read_csv("../csv/resnet32-cifar10/ablation/eps.csv")
@@ -81,7 +89,7 @@ def main():
         runs[eps] = pd.concat(dfs)
         runs[eps]["test.accuracy.top1"] *= 100
     
-    plot_scatter_flops(runs, layer_ops)
+    plot_scatter_flops(runs, layer_ops, neurons)
 
 
 if __name__ == '__main__':

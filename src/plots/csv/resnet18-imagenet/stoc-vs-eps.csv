@@ -1,4 +1,3 @@
 "Name","Tags","ID","arch","dataset","batch_size","val_size","epochs","lr","weight_decay","optim","topk","delta_of_delta","velocity","velocity_mu","eps"
 "dainty-valley-8","","hm02748q","resnet18-imagenet","imagenet","128","0.001","90","0.1","0.0001","sgd","-","0","true","0.5","0.001"
-"neat-wave-161","","sqlvk1or","resnet18-imagenet","imagenet","128","0.001","90","0.1","0.0001","sgd","0.8143","0","true","0.5","-"
 "atomic-forest-37","","wtj256ld","resnet18-imagenet","imagenet","128","0.001","90","0.1","0.0001","sgd","0.8","0","true","0.5","-"
