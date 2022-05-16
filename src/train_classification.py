@@ -168,12 +168,6 @@ def main(rank, config):
             
             get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
             
-            if config.delta_of_delta or config.velocity:
-                hooks[k].update_velocity()
-                hooks[k].update_delta_buffer()
-            
-            hooks[k].reset()
-            
             log_deltas["phi"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(phi.cpu().numpy(),
                                                                                   bins=min(512, phi.shape[0])))
             log_deltas["d_phi"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(d_phi.cpu().numpy(),
@@ -181,6 +175,12 @@ def main(rank, config):
             log_deltas["velocity"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(velocity.cpu().numpy(),
                                                                                        bins=min(512,
                                                                                                 velocity.shape[0])))
+            
+            if config.delta_of_delta or config.velocity:
+                hooks[k].update_velocity()
+                hooks[k].update_delta_buffer()
+            
+            hooks[k].reset()
         
         if config.param_norm:
             for n, m in model.named_modules():
