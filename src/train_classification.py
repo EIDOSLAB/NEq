@@ -152,6 +152,7 @@ def main(rank, config):
         
         # Save the activations into the dict
         log_deltas = {"phi": {}, "d_phi": {}, "velocity": {}}
+        log_param_norm = {}
         for k in hooks:
             # Get the masks, either random or evaluated
             if config.delta_of_delta:
@@ -182,7 +183,6 @@ def main(rank, config):
                                                                                                 velocity.shape[0])))
         
         if config.param_norm:
-            log_param_norm = {}
             for n, m in model.named_modules():
                 if isinstance(m, (nn.Conv2d, nn.BatchNorm2d)):
                     norm = 1 - cosine_similarity(previous_params[n],
