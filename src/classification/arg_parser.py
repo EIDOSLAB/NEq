@@ -88,6 +88,8 @@ def get_parser():
                        help="Use velocity.")
     parser.add_argument("--velocity-mu", type=float, default=0,
                         help="Velocity momentum")
+    parser.add_argument("--param-norm", type=int2bool, default=0,
+                        help="Use the norm of the parameters instead of the PSP")
     
     parser.add_argument("--ckp", type=str)
     parser.add_argument("--project-name", type=str, default="zero-grad")

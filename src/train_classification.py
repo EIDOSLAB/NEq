@@ -15,7 +15,7 @@ from classification.data import get_data
 from classification.fit import run
 from classification.models import get_model
 from classification.utils import get_optimizer, get_scheduler
-from general_utils import set_seed, setup, cleanup, attach_hooks, get_gradient_mask, log_masks
+from general_utils import set_seed, setup, cleanup, attach_hooks, get_gradient_mask, log_masks, cosine_similarity
 from optim import MaskedSGD, MaskedAdam
 
 
@@ -81,7 +81,8 @@ def main(rank, config):
                                 isinstance(m, (nn.Conv2d, nn.BatchNorm2d))}}
     
     # Attach the hooks used to gather the PSP value
-    attach_hooks(config, model, hooks)
+    if not config.param_norm:
+        attach_hooks(config, model, hooks)
     
     # First run on validation to get the PSP for epoch -1
     activate_hooks(hooks, True)
@@ -98,6 +99,12 @@ def main(rank, config):
     for k in hooks:
         previous_activations[k] = hooks[k].get_samples_activation()
         hooks[k].reset(previous_activations[k])
+    
+    if config.param_norm:
+        previous_params = {}
+        for n, m in model.named_modules():
+            if isinstance(m, (nn.Conv2d, nn.BatchNorm2d)):
+                previous_params[n] = m.weight.view(m.weight.shape[0], -1).detach().clone()
     
     # In case of DDP wait for all the processes before starting the training
     if rank > -1:
@@ -144,7 +151,7 @@ def main(rank, config):
                 group["masks"] = grad_mask
         
         # Save the activations into the dict
-        log_deltas = {"deltas": {}, "dod": {}}
+        log_deltas = {"phi": {}, "d_phi": {}, "velocity": {}}
         for k in hooks:
             # Get the masks, either random or evaluated
             if config.delta_of_delta:
@@ -153,8 +160,10 @@ def main(rank, config):
                 deltas = hooks[k].get_velocity()
             else:
                 deltas = hooks[k].get_reduced_activation_delta()
-                
-            d = hooks[k].get_reduced_activation_delta()
+            
+            phi = hooks[k].get_reduced_activation_delta()
+            d_phi = hooks[k].get_delta_of_delta()
+            velocity = hooks[k].get_velocity()
             
             get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
             
@@ -164,10 +173,27 @@ def main(rank, config):
             
             hooks[k].reset()
             
-            log_deltas["dod"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(deltas.cpu().numpy(),
-                                                                                  bins=min(512, deltas.shape[0])))
-            log_deltas["deltas"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(d.cpu().numpy(),
-                                                                                     bins=min(512, deltas.shape[0])))
+            log_deltas["phi"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(phi.cpu().numpy(),
+                                                                                  bins=min(512, phi.shape[0])))
+            log_deltas["d_phi"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(d_phi.cpu().numpy(),
+                                                                                    bins=min(512, d_phi.shape[0])))
+            log_deltas["velocity"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(velocity.cpu().numpy(),
+                                                                                       bins=min(512,
+                                                                                                velocity.shape[0])))
+        
+        if config.param_norm:
+            log_param_norm = {}
+            for n, m in model.named_modules():
+                if isinstance(m, (nn.Conv2d, nn.BatchNorm2d)):
+                    norm = 1 - cosine_similarity(previous_params[n],
+                                                 (m.weight.detach().clone().view(m.weight.shape[0], -1)),
+                                                 dim=1)
+                    mask = torch.where(torch.abs(norm) <= config.eps)[0]
+                    grad_mask[n] = mask
+                    log_param_norm[n] = wandb.Histogram(np_histogram=np.histogram(norm.cpu().numpy(),
+                                                                                  bins=min(512, norm.shape[0])))
+                    
+                    previous_params[n] = m.weight.detach().clone().view(m.weight.shape[0], -1)
         
         # Test step
         activate_hooks(hooks, False)
@@ -182,7 +208,8 @@ def main(rank, config):
                 "test":                test,
                 "epochs":              epoch,
                 "lr":                  optimizer.param_groups[0]["lr"],
-                "deltas":              log_deltas
+                "deltas":              log_deltas,
+                "param_norm":          log_param_norm
             })
             
             print(f"Epoch\t {epoch}\n"
