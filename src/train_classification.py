@@ -154,19 +154,12 @@ def main(rank, config):
         log_deltas = {"phi": {}, "d_phi": {}, "velocity": {}}
         log_param_norm = {}
         for k in hooks:
-            # Get the masks, either random or evaluated
-            if config.delta_of_delta:
-                deltas = hooks[k].get_delta_of_delta()
-            elif config.velocity:
-                deltas = hooks[k].get_velocity()
-            else:
-                deltas = hooks[k].get_reduced_activation_delta()
             
-            phi = hooks[k].get_reduced_activation_delta()
-            d_phi = hooks[k].get_delta_of_delta()
-            velocity = hooks[k].get_velocity()
+            phi = deepcopy(hooks[k].get_reduced_activation_delta().detach().clone())
+            d_phi = deepcopy(hooks[k].get_delta_of_delta().detach().clone())
+            velocity = deepcopy(hooks[k].get_velocity().detach().clone())
             
-            get_gradient_mask(config, epoch + 1, k, deltas, grad_mask)
+            get_gradient_mask(config, epoch + 1, k, velocity, grad_mask)
             
             log_deltas["phi"][f"{k}"] = wandb.Histogram(np_histogram=np.histogram(phi.cpu().numpy(),
                                                                                   bins=min(512, phi.shape[0])))

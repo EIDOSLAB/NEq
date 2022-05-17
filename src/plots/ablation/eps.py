@@ -10,7 +10,7 @@ from torch import nn
 from tqdm import tqdm
 
 from classification.models import resnet32
-from plots.thop import profile
+from plots.thop import profile, clever_format
 
 
 def plot_scatter_flops(runs, layer_ops, neurons):
@@ -37,9 +37,14 @@ def plot_scatter_flops(runs, layer_ops, neurons):
                 remaining_neurons += (neurons[layer] * ((100 - mean[f"frozen_neurons_perc.layer.{layer}"]) / 100))
 
         backprop_flops = round(remaining_ops.mean(), 2)
+        backprop_flops_std = round(remaining_ops.std() / 100, 2)
         
         plt.errorbar(backprop_flops, mean["test.accuracy.top1"].iloc[[-1]],
                      label=f"$\epsilon = {eps}$", yerr=std["test.accuracy.top1"].iloc[[-1]], alpha=0.7, fmt="o", linewidth=1)
+        
+        print(f"{eps} "
+              f"& {clever_format(backprop_flops)} \pm {clever_format(backprop_flops_std)} "
+              f"& {round(mean[f'test.accuracy.top1'].iloc[[-1]].values[0], 2)} \pm {round(std[f'test.accuracy.top1'].iloc[[-1]].values[0], 2)} \\")
     
     plt.legend(ncol=3)
     plt.xlabel("FLOPs")

@@ -8,7 +8,7 @@ command:
 method: grid
 parameters:
   seed:
-    values: [ 1 ]
+    values: [ 0, 1, 2, 3 ]
   root:
     values: [ "/data/classification" ]
   amp:
