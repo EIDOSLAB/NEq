@@ -83,7 +83,7 @@ if __name__ == '__main__':
     plt.style.context("seaborn-pastel")
     
     model = torchvision.models.segmentation.deeplabv3_resnet50(num_classes=21, aux_loss=True)
-    bs = 32
+    bs = 1
     input = torch.randn(bs, 3, 480, 480)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     

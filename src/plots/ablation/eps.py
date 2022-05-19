@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, rc
 from torch import nn
 from tqdm import tqdm
 
@@ -47,8 +47,9 @@ def plot_scatter_flops(runs, layer_ops, neurons):
               f"& {round(mean[f'test.accuracy.top1'].iloc[[-1]].values[0], 2)} \pm {round(std[f'test.accuracy.top1'].iloc[[-1]].values[0], 2)} \\")
     
     plt.legend(ncol=3)
-    plt.xlabel("FLOPs")
-    plt.ylabel("Classification Accuracy (%)")
+    plt.tick_params(axis='both', which='major', labelsize=13)
+    plt.ylabel("Bprop. FLOPs per iter.", fontsize=15)
+    plt.ylabel("Classification Accuracy (%)", fontsize=15)
     plt.tight_layout()
     plt.savefig("eps.png", dpi=300)
     plt.savefig("eps.pdf", dpi=300)
@@ -56,10 +57,12 @@ def plot_scatter_flops(runs, layer_ops, neurons):
 
 
 def main():
+    rc('font', family='Times New Roman')
+    rc('text', usetex=True)
     plt.style.context("seaborn-pastel")
     
     model = resnet32()
-    bs = 100
+    bs = 1
     input = torch.randn(bs, 3, 32, 32)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     

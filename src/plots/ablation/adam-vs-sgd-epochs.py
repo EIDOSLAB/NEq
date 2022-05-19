@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, rc
 from torch import nn
 from tqdm import tqdm
 
@@ -13,10 +13,12 @@ from classification.models import resnet32
 from plots.thop import profile, clever_format
 
 if __name__ == '__main__':
+    rc('font', family='Times New Roman')
+    rc('text', usetex=True)
     plt.style.context("seaborn-pastel")
     
     model = resnet32()
-    bs = 100
+    bs = 1
     input = torch.randn(bs, 3, 32, 32)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     

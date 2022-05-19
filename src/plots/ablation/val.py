@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, rc
 from torch import nn
 from tqdm import tqdm
 
@@ -41,16 +41,18 @@ def build_table(runs, layer_ops, neurons):
         backprop_flops_std = round(remaining_ops.std() / 100, 2)
         accuracy = round(mean[f"test.accuracy.top1"].iloc[[-1]].values[0], 2)
         
-        print(f"{images} & {trained_neurons} $\pm$ {trained_neurons_std}"
+        print(f"{images}"
               f" & {clever_format(backprop_flops)} $\pm$ {clever_format(backprop_flops_std)}"
               f" & {accuracy} $\pm$ {round(std[f'test.accuracy.top1'].iloc[[-1]].values[0], 2)}")
 
 
 def main():
+    rc('font', family='Times New Roman')
+    rc('text', usetex=True)
     plt.style.context("seaborn-pastel")
     
     model = resnet32()
-    bs = 100
+    bs = 1
     input = torch.randn(bs, 3, 32, 32)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     
@@ -65,7 +67,7 @@ def main():
     api = wandb.Api(timeout=60)
     df = pd.read_csv("../csv/resnet32-cifar10/ablation/val.csv")
     vals = df["val-size"].tolist()
-    vals = sorted(set(vals))
+    vals = sorted(set(vals), reverse=True)
     
     ids = defaultdict(list)
     

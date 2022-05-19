@@ -95,7 +95,7 @@ if __name__ == '__main__':
                             ape=False,
                             patch_norm=True,
                             use_checkpoint=False, )
-    bs = 64
+    bs = 1
     input = torch.randn(bs, 3, 224, 224)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     

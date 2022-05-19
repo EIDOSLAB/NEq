@@ -173,7 +173,7 @@ if __name__ == '__main__':
     plt.style.context("seaborn-pastel")
     
     model = resnet32()
-    bs = 100
+    bs = 1
     input = torch.randn(bs, 3, 32, 32)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     

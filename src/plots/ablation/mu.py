@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, rc
 from torch import nn
 from tqdm import tqdm
 
@@ -14,7 +14,7 @@ from plots.thop import profile
 
 
 def plot_frozen(runs, layer_ops):
-    plt.figure(figsize=(9, 3), dpi=600)
+    fig, axs = plt.subplots(1, 2, figsize=(15, 3))
     total_ops = sum(layer_ops.values())
     
     for mu in runs:
@@ -49,12 +49,21 @@ def plot_frozen(runs, layer_ops):
             y1.append(remaining_ops_min)
             y2.append(remaining_ops_max)
         
-        plt.plot(np.arange(0, mean.shape[0]), y, label=f"$\mu_{{eq}}={mu}$", alpha=0.7, linewidth=1)
-        plt.fill_between(x=np.arange(0, mean.shape[0]), y1=y1, y2=y2, alpha=0.1)
+        axs[0].plot(mean.index.values, y, label=f"$\mu_{{eq}}={mu}$", alpha=0.7, linewidth=1)
+        axs[0].fill_between(x=mean.index.values, y1=y1, y2=y2, alpha=0.1)
+        
+        axs[1].plot(mean.index.values, mean["test.accuracy.top1"], label=f"$\mu_{{eq}}={mu}$", alpha=0.7, linewidth=1)
+        axs[1].fill_between(x=mean.index.values, y1=min["test.accuracy.top1"], y2=max["test.accuracy.top1"], alpha=0.1)
+
+    axs[0].set_xlabel("Epochs", fontsize=20)
+    axs[0].set_ylabel("Bprop. FLOPs per iter.", fontsize=15)
+    axs[1].set_xlabel("Epochs", fontsize=20)
+    axs[1].set_ylabel("Accuracy", fontsize=20)
+    axs[1].set_yticks([40, 60, 80])
     
-    plt.legend(ncol=1)
-    plt.xlabel("Epochs")
-    plt.ylabel("FLOPs")
+    plt.legend(ncol=1, fontsize=20)
+    axs[0].tick_params(axis='both', which='major', labelsize=15)
+    axs[1].tick_params(axis='both', which='major', labelsize=15)
     plt.tight_layout()
     plt.savefig("mu-line.png", dpi=300)
     plt.savefig("mu-line.pdf", dpi=300)
@@ -62,10 +71,12 @@ def plot_frozen(runs, layer_ops):
 
 
 def main():
+    rc('font', family='Times New Roman')
+    rc('text', usetex=True)
     plt.style.context("seaborn-pastel")
     
     model = resnet32()
-    bs = 100
+    bs = 1
     input = torch.randn(bs, 3, 32, 32)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
     
