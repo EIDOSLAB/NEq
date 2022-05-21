@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+import torch
 from torch import nn
 from torch.nn.functional import cross_entropy
 from torch.optim import SGD, Adam
@@ -9,8 +10,9 @@ from datasets import get_dataloaders
 from experiments.templates.classification import ClassificationLearningExperiment
 from metrics import Accuracy
 from models import get_model
-from neq import Hook, get_mask
+from neq import Hook
 from optimizers import MaskedSGD, MaskedAdam
+from utils import int2bool
 
 
 class CIFAR10_Base(ClassificationLearningExperiment):
@@ -76,7 +78,9 @@ class CIFAR10_NEq(CIFAR10_Base):
     @staticmethod
     def load_config(parser):
         CIFAR10_Base.load_config(parser)
+        parser.add_argument('--eps', type=float, help='NEq eps', default=0)
         parser.add_argument('--velocity-mu', type=float, help='NEq velocity mu', default=0.5)
+        parser.add_argument('--log-distributions', type=int2bool, help='log phi, delta phi, and velocity', default=0)
     
     def load_model(self):
         model, total_neurons = super().load_model()
@@ -99,6 +103,9 @@ class CIFAR10_NEq(CIFAR10_Base):
     def run(self):
         self.__activate_hooks(True)
         self.iter_dataloader("validation", self.validation, False)
+
+        for k in self.hooks:
+            self.hooks[k].reset(self.hooks[k].get_samples_activation())
         
         for epoch in range(1, self.opts.epochs + 1):
             self.__activate_hooks(False)
@@ -117,17 +124,17 @@ class CIFAR10_NEq(CIFAR10_Base):
     def __activate_hooks(self, active):
         for h in self.hooks:
             self.hooks[h].active = active
-            
+    
     def __compute_masks(self, epoch):
         for k in self.hooks:
-        
             phi = deepcopy(self.hooks[k].get_reduced_activation_delta().detach().clone())
-            d_phi = deepcopy(self.hooks[k].get_delta_of_delta().detach().clone())
+            delta_phi = deepcopy(self.hooks[k].get_delta_of_delta().detach().clone())
             velocity = deepcopy(self.hooks[k].get_velocity().detach().clone())
-        
-            get_mask(self.opts, epoch, k, velocity, self.masks)
-        
+
+            if epoch > 1:
+                self.masks[k] = torch.where(torch.abs(velocity) < self.opts.eps)[0]
+            
             self.hooks[k].update_velocity()
             self.hooks[k].update_delta_buffer()
-        
+            
             self.hooks[k].reset()

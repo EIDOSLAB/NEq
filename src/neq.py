@@ -1,5 +1,3 @@
-import random
-
 import torch
 
 
@@ -108,37 +106,3 @@ def cosine_similarity(x1, x2, dim, eps=1e-8):
     cos_sim_value = torch.sum(x1_normalized * x2_normalized, dim=dim)
     
     return mask_2 * cos_sim_value + mask_1
-
-
-def get_mask(config, epoch, k, reduced_activation_delta, grad_mask):
-    # If the warmup epochs are over we can start evaluating the masks
-    if epoch > (config.warmup - 1):
-        if config.random_mask:
-            random_mask(k, reduced_activation_delta, config.topk, grad_mask)
-        else:
-            evaluated_mask(config, k, reduced_activation_delta, config.topk, grad_mask)
-
-
-def random_mask(k, reduced_activation_delta, topk, grad_mask):
-    # How many neurons to select as "to freeze" as percentage of the total number of neurons
-    topk = int((1 - topk) * reduced_activation_delta.shape[0])
-    
-    mask = torch.tensor(random.sample(range(0, reduced_activation_delta.shape[0]), topk))
-    
-    grad_mask[k] = mask
-
-
-def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
-    if config.eps != "-":
-        mask = torch.where(torch.abs(reduced_activation_delta) <= config.eps)[0]
-    elif config.binomial:
-        mask = torch.where(torch.distributions.binomial.Binomial(probs=reduced_activation_delta).sample() == 0)[0]
-    else:
-        # How many neurons to select as "to freeze" as percentage of the total number of neurons
-        topk = int((1 - topk) * reduced_activation_delta.shape[0])
-        mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=True)[1]
-    
-    if config.pinning and k in grad_mask:
-        grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
-    else:
-        grad_mask[k] = mask
