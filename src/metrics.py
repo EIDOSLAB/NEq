@@ -39,9 +39,9 @@ class AverageMeter:
 
 
 class RollingMeter:
-    def __init__(self) -> None:
-        self.outputs = torch.tensor([])
-        self.targets = torch.tensor([])
+    def __init__(self, config) -> None:
+        self.outputs = torch.tensor([], device=config.device)
+        self.targets = torch.tensor([], device=config.device)
     
     def update(self, outputs, targets):
         self.outputs = torch.cat((self.outputs, outputs), dim=0)
@@ -61,8 +61,8 @@ class Accuracy(RollingMeter):
         topk (Tuple[int, ...], optional): top-k accuracy identifiers. E.g. to evaluate both top-1 and top-5 accuracy `topk = (1, 5)`.
     """
     
-    def __init__(self, topk=(1,)):
-        super().__init__()
+    def __init__(self, config, topk=(1,)):
+        super().__init__(config)
         self.topk = topk
     
     def value(self) -> list:

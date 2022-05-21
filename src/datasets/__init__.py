@@ -1,6 +1,6 @@
 from filelock import FileLock
 from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST, CIFAR10, ImageNet
+from torchvision.datasets import CIFAR10, ImageNet
 
 from datasets.map import MapDataset
 from datasets.split import split_dataset
@@ -10,22 +10,10 @@ from datasets.transforms import T
 def get_dataloaders(config, shuffle=True):
     print(f'=> Loading dataset {config.dataset}')
     
-    loader = {"mnist":    load_mnist,
-              "cifar10":  load_cifar10,
+    loader = {"cifar10":  load_cifar10,
               "imagenet": load_imagenet}
     
     return loader[config.dataset](config, shuffle=shuffle)
-
-
-def load_mnist(config, shuffle):
-    transform = T["mnist"]
-    
-    with FileLock("mnist.lock"):
-        train_dataset = MNIST(root=config.root, train=True, transform=None, download=True)
-        train_dataset, validation_dataset = split_dataset(train_dataset, config.val_size, config.seed)
-        test_dataset = MNIST(root=config.root, train=False, transform=transform[1], download=True)
-        
-    return _get_dataloaders(config, train_dataset, validation_dataset, test_dataset, transform, shuffle)
 
 
 def load_cifar10(config, shuffle):
@@ -33,9 +21,9 @@ def load_cifar10(config, shuffle):
     
     with FileLock("mnist.lock"):
         train_dataset = CIFAR10(root=config.root, train=True, transform=None, download=True)
-        train_dataset, validation_dataset = split_dataset(train_dataset, config.val_size, config.seed)
+        train_dataset, validation_dataset = split_dataset(train_dataset, config.validation_size, config.seed)
         test_dataset = CIFAR10(root=config.root, train=False, transform=transform[1], download=True)
-        
+    
     return _get_dataloaders(config, train_dataset, validation_dataset, test_dataset, transform, shuffle)
 
 
@@ -44,9 +32,9 @@ def load_imagenet(config, shuffle):
     
     with FileLock("mnist.lock"):
         train_dataset = ImageNet(root=config.root, split="train", transform=None)
-        train_dataset, validation_dataset = split_dataset(train_dataset, config.val_size, config.seed)
+        train_dataset, validation_dataset = split_dataset(train_dataset, config.validation_size, config.seed)
         test_dataset = ImageNet(root=config.root, split="val", transform=transform[1])
-        
+    
     return _get_dataloaders(config, train_dataset, validation_dataset, test_dataset, transform, shuffle)
 
 
