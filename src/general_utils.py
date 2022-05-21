@@ -33,54 +33,10 @@ def cleanup():
     dist.destroy_process_group()
 
 
-class MapDataset(Dataset):
-    """Given a dataset, creates a dataset which applies a mapping function to its items (lazily, only when an item is called).
-
-    Note that data is not cloned/copied from the initial dataset.
-
-    Args:
-        dataset:
-        map_fn:
-    """
-    
-    def __init__(self, dataset, map_fn, with_target=False):
-        self.dataset = dataset
-        self.map = map_fn
-        self.with_target = with_target
-    
-    def __getitem__(self, index):
-        if self.with_target:
-            return self.map(self.dataset[index][0], self.dataset[index][1])
-        else:
-            return self.map(self.dataset[index][0]), self.dataset[index][1]
-    
-    def __len__(self):
-        return len(self.dataset)
 
 
-def split_dataset(dataset: torch.utils.data.Dataset, percentage: float, random_seed: int = 0) -> Tuple[
-    torch.utils.data.Dataset, torch.utils.data.Dataset]:
-    """Randomly splits a `torch.utils.data.Dataset` instance in two non-overlapping separated `Datasets`.
 
-    The split of the elements of the original `Dataset` is based on `percentage` $$\in [0, 1]$$.
-    I.e. if `percentage=0.2` the first returned dataset will contain 80% of the total elements and the second 20%.
 
-    Args:
-        dataset (torch.utils.data.Dataset): `torch.utils.data.Dataset` instance to be split.
-        percentage (float): percentage of elements of `dataset` contained in the second dataset.
-        random_seed (int): random seed for the split generator.
-
-    Returns:
-        tuple: a tuple containing the two new datasets.
-
-    """
-    dataset_length = len(dataset)
-    valid_length = int(np.floor(percentage * dataset_length))
-    train_length = dataset_length - valid_length
-    train_dataset, valid_dataset = random_split(dataset, [train_length, valid_length],
-                                                generator=Generator().manual_seed(random_seed))
-    
-    return train_dataset, valid_dataset
 
 
 def attach_hooks(config, model, hooks):

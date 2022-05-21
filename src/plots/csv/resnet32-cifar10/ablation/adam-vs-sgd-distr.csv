@@ -1,7 +1,0 @@
-"Name","ID","optim","lr","velocity-mu","epochs"
-"visionary-sweep-3","pdprqd6x","sgd","0.1","0.9","249"
-"snowy-sweep-2","a75es22z","sgd","0.1","0.5","249"
-"swept-sweep-1","pk87v6i4","sgd","0.1","0","249"
-"stilted-sweep-12","w7xvzh0p","adam","0.001","0.9","249"
-"deep-sweep-11","sfng0exf","adam","0.001","0.5","249"
-"prime-sweep-10","y76thk3y","adam","0.001","0","249"
