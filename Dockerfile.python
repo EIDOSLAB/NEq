@@ -1,5 +1,8 @@
 FROM eidos-service.di.unito.it/eidos-base-pytorch:1.10.0
 
+RUN pip3 install filelock
+RUN pip3 install --upgrade wandb
+
 # Copy source files and make it owned by the group eidoslab
 # and give write permission to the group
 COPY src /src
