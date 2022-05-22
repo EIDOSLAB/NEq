@@ -90,12 +90,4 @@ class Accuracy(RollingMeter):
         if len(res) == 1:
             res = res[0]
         
-        return res
-
-
-def topk_accuracy(outputs, labels, topk=1):
-    outputs = torch.softmax(outputs, dim=1)
-    _, preds = outputs.topk(topk, dim=1)
-    preds = preds.t()
-    correct = preds.eq(labels.view(1, -1).expand_as(preds)).sum()
-    return (correct / float(len(outputs))).cpu().item()
+        return res * 100

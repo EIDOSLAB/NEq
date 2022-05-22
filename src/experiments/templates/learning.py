@@ -44,7 +44,7 @@ class LearningExperiment(ExperimentBase):
         
         if logging:
             wandb.init(config=self.opts,
-                       project=self.project_name)
+                       project=self.project_name)  # TODO find better naming
         
         with FileLock(self.__class__.__name__):
             self.dataloaders = self.load_data()
