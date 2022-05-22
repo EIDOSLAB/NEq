@@ -5,11 +5,11 @@ import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import wandb
 from filelock import FileLock
 from torch import nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-import wandb
 from classification.arg_parser import get_parser
 from classification.data import get_data
 from classification.fit import run
