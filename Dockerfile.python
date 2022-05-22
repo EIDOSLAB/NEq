@@ -1,11 +1,5 @@
 FROM eidos-service.di.unito.it/eidos-base-pytorch:1.10.0
 
-RUN pip3 install --upgrade pip setuptools wheel
-RUN pip3 install cython
-RUN pip3 install opencv-python
-RUN apt install -y gcc
-RUN pip3 install pycocotools
-
 # Copy source files and make it owned by the group eidoslab
 # and give write permission to the group
 COPY src /src
