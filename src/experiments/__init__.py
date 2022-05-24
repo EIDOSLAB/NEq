@@ -1,4 +1,5 @@
-from experiments.classification.cifar import CIFAR10_Base, CIFAR10_NEq
+from experiments.classification.cifar10 import CIFAR10_NEq
+from experiments.templates.cifar10 import CIFAR10_Base
 
 __all__ = [CIFAR10_Base, CIFAR10_NEq]
 
