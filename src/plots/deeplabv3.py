@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 import torchvision
 import wandb
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, rc
 from torch import nn
 from torchvision.models import resnet18
 from tqdm import tqdm
@@ -81,57 +81,103 @@ def build_table(stoc_runs, eps_runs, layer_ops, neurons):
 
 if __name__ == '__main__':
     plt.style.context("seaborn-pastel")
+    rc('font', family='Times New Roman')
+    rc('text', usetex=True)
     
     model = torchvision.models.segmentation.deeplabv3_resnet50(num_classes=21, aux_loss=True)
     bs = 1
     input = torch.randn(bs, 3, 480, 480)
     total_ops, total_params, ret_dict = profile(model, inputs=(input,), ret_layer_info=True)
-    
+
     layer_ops = {}
     neurons = {}
-    
+
     for n, m in model.named_modules():
         if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d, nn.LayerNorm)):
             layer_ops[n] = m._buffers["total_ops"].item() * 2
             neurons[n] = m.weight.shape[0]
-    
+
     api = wandb.Api(timeout=60)
-    df_ids = pd.read_csv("csv/deeplab-coco/stoc-vs-eps.csv")
-    topks = [v for v in df_ids["topk"].tolist() if v != "-"]
-    topks = sorted(set(topks), reverse=True)
+    # df_ids = pd.read_csv("csv/deeplab-coco/stoc-vs-eps.csv")
+    # topks = [v for v in df_ids["topk"].tolist() if v != "-"]
+    # topks = sorted(set(topks), reverse=True)
+    #
+    # epsess = [v for v in df_ids["eps"].tolist() if v != "-"]
+    # epsess = sorted(set(epsess), reverse=True)
+    #
+    # stoc_ids = defaultdict(list)
+    # eps_ids = defaultdict(list)
+    #
+    # for topk in topks:
+    #     stoc_ids[topk] = df_ids.loc[df_ids['topk'] == topk]["ID"].tolist()
+    # for eps in epsess:
+    #     eps_ids[eps] = df_ids.loc[df_ids['eps'] == eps]["ID"].tolist()
+    #
+    # stoc_runs = defaultdict()
+    # eps_runs = defaultdict()
+    #
+    # for topk in tqdm(topks):
+    #     dfs = []
+    #     for id in tqdm(stoc_ids[topk]):
+    #         run = api.run(f"andreabrg/zero-grad/{id}")
+    #         config = json.loads(run.json_config)
+    #         df = run.history()
+    #         dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
+    #
+    #     stoc_runs[topk] = pd.concat(dfs)
+    #
+    # for eps in tqdm(epsess):
+    #     dfs = []
+    #     for id in tqdm(eps_ids[eps]):
+    #         run = api.run(f"andreabrg/zero-grad/{id}")
+    #         config = json.loads(run.json_config)
+    #         df = run.history()
+    #         dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
+    #
+    #     eps_runs[eps] = pd.concat(dfs)
+    #
+    # build_table(stoc_runs, eps_runs, layer_ops, neurons)
     
-    epsess = [v for v in df_ids["eps"].tolist() if v != "-"]
-    epsess = sorted(set(epsess), reverse=True)
+    # PLOT
+
+    run = api.run(f"andreabrg/zero-grad/2264gugy")
+    config = json.loads(run.json_config)
+    df = run.history()
+    df = df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["lr"]]
     
-    stoc_ids = defaultdict(list)
-    eps_ids = defaultdict(list)
+    total_ops = sum(layer_ops.values())
     
-    for topk in topks:
-        stoc_ids[topk] = df_ids.loc[df_ids['topk'] == topk]["ID"].tolist()
-    for eps in epsess:
-        eps_ids[eps] = df_ids.loc[df_ids['eps'] == eps]["ID"].tolist()
+    y = []
     
-    stoc_runs = defaultdict()
-    eps_runs = defaultdict()
+    for i in range(len(df.index)):
     
-    for topk in tqdm(topks):
-        dfs = []
-        for id in tqdm(stoc_ids[topk]):
-            run = api.run(f"andreabrg/zero-grad/{id}")
-            config = json.loads(run.json_config)
-            df = run.history()
-            dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
-        
-        stoc_runs[topk] = pd.concat(dfs)
+        remaining_ops = 0
+        remaining_ops_min = 0
+        remaining_ops_max = 0
     
-    for eps in tqdm(epsess):
-        dfs = []
-        for id in tqdm(eps_ids[eps]):
-            run = api.run(f"andreabrg/zero-grad/{id}")
-            config = json.loads(run.json_config)
-            df = run.history()
-            dfs.append(df[[c for c in df.columns if "frozen_neurons_perc" in c] + ["test.iou"]])
-        
-        eps_runs[eps] = pd.concat(dfs)
+        for layer in layer_ops:
+            if f"frozen_neurons_perc.layer.{layer}" in df:
+                ops = layer_ops[layer]
+                frozen_ops = ops * (df[f"frozen_neurons_perc.layer.{layer}"].iloc[[i]].values[0] / 100)
+                remaining_ops += ops - frozen_ops
     
-    build_table(stoc_runs, eps_runs, layer_ops, neurons)
+        y.append(remaining_ops)
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax2 = ax.twinx()
+    ax.plot(df.index.values, y, alpha=0.7, linewidth=1, color='#ff7f0e')
+    ax2.plot(df.index.values, df["lr"], alpha=0.7, linewidth=1, color='#1f77b4')
+
+    ax.set_xlabel("Epochs", fontsize=20)
+    ax2.set_ylabel("Bprop. FLOPs per iter.", fontsize=20, color='#ff7f0e')
+    ax.set_ylabel("Learning Rate", fontsize=20, color='#1f77b4')
+    
+    ax2.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+
+    ax.tick_params(axis='both', which='major', labelsize=15)
+    ax2.tick_params(axis='both', which='major', labelsize=15)
+
+    plt.tight_layout()
+    plt.savefig("deeplab.png", dpi=300)
+    plt.savefig("deeplab.pdf", dpi=300)
+    plt.clf()
