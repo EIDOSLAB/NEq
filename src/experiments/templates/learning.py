@@ -2,7 +2,6 @@ import os
 import time
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Dict
 
 import torch
 import wandb
@@ -23,18 +22,58 @@ class LearningExperiment(ExperimentBase):
         self.optimizer = None
         self.model = None
         self.scaler = None
-        self.project_name = None
+        self.project_name = "NEq"
+        self.tag = "learning-base"
         self.last_logs = {}
     
+    @staticmethod
+    def load_config(parser):
+        parser.add_argument('--root', type=str,
+                            help='data root', default='/data')
+        
+        parser.add_argument('--epochs', type=int,
+                            help='training epochs', default=250)
+        parser.add_argument('--lr', type=float,
+                            help='initial learning rate', default=0.1)
+        parser.add_argument('--weight-decay', type=float,
+                            help='weight decay', default=5e-4)
+        parser.add_argument('--momentum', type=float,
+                            help='momentum', default=0.9)
+        parser.add_argument('--batch-size', type=int,
+                            help='training batch size', default=100)
+        parser.add_argument('--dataset', type=str,
+                            help='dataset', default="cifar10")
+        parser.add_argument('--validation-size', type=float,
+                            help='validation size', default=0.1)
+        parser.add_argument('--seed', type=int,
+                            help='random seed', default=0)
+        parser.add_argument('--optimizer', type=str, choices=['sgd', 'adam'],
+                            help='optmizer', default='sgd')
+        
+        parser.add_argument('--num-workers', type=int,
+                            help='number of dataloader workers', default=8)
+        parser.add_argument('--save-checkpoints', type=utils.arg2bool,
+                            help='enable checkpoint saving', default=False)
+        parser.add_argument('--amp', type=utils.arg2bool,
+                            help='use amp', default=True)
+    
     def initialize(self, logging=True):
+        print('Initializing', self.__class__.__name__, 'experiment')
+        # Set the reproducibility seeds
         utils.set_seed(self.opts.seed)
         
-        print('Initializing', self.__class__.__name__, 'experiment')
+        # Create the amp grad scaler
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.opts.amp)
         
+        # Build the model
         self.model, self.total_neurons = self.load_model()
-        self.model = self.model.to(self.opts.device)
-        self.optimizer, self.scheduler = self.load_optimizer()
+        self.model = self.model.to(self.device)
+        
+        # Build the optimizer
+        self.optimizer = self.load_optimizer()
+        
+        # Build the scheduler
+        self.scheduler = self.load_scheduler()
         
         if self.optimizer is not None:
             self.opts.optimizer = self.optimizer.__class__.__name__
@@ -43,9 +82,14 @@ class LearningExperiment(ExperimentBase):
             self.opts.scheduler = self.scheduler.__class__.__name__
         
         if logging:
+            # Initialize logging instruments (wandb and tensorboard)
+            # TODO add SummaryWriter
             wandb.init(config=self.opts,
-                       project=self.project_name)  # TODO find better naming
+                       project=self.project_name,
+                       tags=[self.tag],
+                       sync_tensorboard=True)
         
+        # Load the dataloaders
         with FileLock(self.__class__.__name__):
             self.dataloaders = self.load_data()
         
@@ -57,40 +101,9 @@ class LearningExperiment(ExperimentBase):
         print(self.model)
         print('----')
     
-    @staticmethod
-    def load_config(parser):
-        parser.add_argument('--root', type=str, help='data root', default='/data')
-        
-        parser.add_argument('--epochs', type=int, help='training epochs',
-                            default=250)
-        parser.add_argument('--lr', type=float, help='initial learning rate',
-                            default=0.1)
-        parser.add_argument('--weight-decay', type=float, help='weight decay',
-                            default=5e-4)
-        parser.add_argument('--momentum', type=float, help='momentum',
-                            default=0.9)
-        parser.add_argument('--batch-size', type=int, help='training batch size',
-                            default=100)
-        parser.add_argument('--dataset', type=str, help='dataset',
-                            default="cifar10")
-        parser.add_argument('--validation-size', type=float, help='validation size',
-                            default=0.1)
-        parser.add_argument('--seed', type=int, help='random seed',
-                            default=0)
-        parser.add_argument('--optimizer', type=str, help='optmizer',
-                            choices=['sgd', 'adam'], default='sgd')
-        
-        parser.add_argument('--device', type=str, help='torch device', default='cuda', )
-        parser.add_argument('--num-workers', type=int, help='number of dataloader workers', default=8)
-        parser.add_argument('--save-checkpoints', type=utils.int2bool, help='enable checkpoint saving', default=False)
-        parser.add_argument('--amp', type=utils.int2bool, help='use amp', default=True)
-    
-    def name(self):
-        return f'{self.__class__.__name__}-' + self.get_experiment_key() + f'-s{self.opts.seed}'
-    
-    @abstractmethod
-    def get_experiment_key(self):
-        raise NotImplementedError
+    def run(self):
+        for epoch in range(1, self.opts.epochs + 1):
+            self.run_epoch(epoch)
     
     @abstractmethod
     def load_model(self):
@@ -98,6 +111,10 @@ class LearningExperiment(ExperimentBase):
     
     @abstractmethod
     def load_optimizer(self):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def load_scheduler(self):
         raise NotImplementedError
     
     @abstractmethod
@@ -122,10 +139,10 @@ class LearningExperiment(ExperimentBase):
     
     def predict_Y(self, dataloader, index):
         labels = torch.tensor([])
-        outputs = torch.tensor([], device=self.opts.device)
+        outputs = torch.tensor([], device=self.device)
         
         for minibatch in tqdm(dataloader, desc='Predicting:'):
-            minibatch[0], minibatch[1] = minibatch[0].to(self.opts.device), minibatch[1].to(self.opts.device)
+            minibatch[0], minibatch[1] = minibatch[0].to(self.device), minibatch[1].to(self.device)
             with torch.no_grad():
                 with torch.cuda.amp.autocast(self.scaler is not None):
                     y = self.predict(minibatch)
@@ -150,7 +167,7 @@ class LearningExperiment(ExperimentBase):
         
         self.model.train(train)
         for idx, minibatch in enumerate(dataloader):
-            minibatch[0], minibatch[1] = minibatch[0].to(self.opts.device), minibatch[1].to(self.opts.device)
+            minibatch[0], minibatch[1] = minibatch[0].to(self.device), minibatch[1].to(self.device)
             with torch.set_grad_enabled(train):
                 with torch.cuda.amp.autocast(enabled=self.opts.amp):
                     outputs = self.predict(minibatch)
@@ -175,7 +192,8 @@ class LearningExperiment(ExperimentBase):
         logs.update({k: m.value() for k, m in running_losses.items()})
         return logs
     
-    def fit(self) -> Dict:
+    def fit(self):
+        # Iterate over the dataset
         return self.iter_dataloader('train', self.dataloaders['train'], True)
     
     def test(self):
@@ -193,32 +211,37 @@ class LearningExperiment(ExperimentBase):
     def run_epoch(self, epoch):
         print(f'\n ----- Epoch {epoch} -----')
         
+        wandb.log({"epochs": epoch}, step=epoch)
+        
+        # Train on the dataloader for one epoch
         start_t = time.perf_counter()
         train_logs = self.fit()
         end_t = time.perf_counter()
         
-        self.last_logs['train'] = train_logs
-        
+        # Print logs
         print('Train:', train_logs)
         wandb.log({'train': train_logs, 'train_t': end_t - start_t}, step=epoch)
         
+        # Perform tests on the other dataloaders and print logs
         for test_name, test_logs in self.test():
-            self.last_logs[test_name] = test_logs
             print(f'{test_name}:', test_logs)
             wandb.log({test_name: test_logs}, step=epoch)
         
+        # Scheduler step
         self.step_schedulers()
         
         optimize_metric = self.optimize_metric()
         if optimize_metric is not None:
             wandb.log(optimize_metric, step=epoch)
         
+        # Log the learning rates
         wandb.log({f"lr-{x}": group["lr"] for x, group in enumerate(self.optimizer.param_groups)}, step=epoch)
         
+        # Save the model checkpoint
         if self.opts.save_checkpoints:
             print('Saving checkpoint to', wandb.run.dir)
             torch.save({'model': self.model.state_dict()}, os.path.join(wandb.run.dir, 'model.pt'))
     
-    def run(self):
-        for epoch in range(1, self.opts.epochs + 1):
-            self.run_epoch(epoch)
+    def __str__(self):
+        # TODO find a better naming convention
+        return f'{self.__class__.__name__}-'

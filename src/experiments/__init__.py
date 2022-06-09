@@ -1,5 +1,5 @@
-from experiments.classification.cifar10 import CIFAR10_NEq
-from experiments.templates.cifar10 import CIFAR10_Base
+from experiments.resnet.cifar10 import CIFAR10_NEq
+from experiments.templates.resnet import CIFAR10_Base
 
 __all__ = [CIFAR10_Base, CIFAR10_NEq]
 

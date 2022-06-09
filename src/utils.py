@@ -7,18 +7,20 @@ import torch
 import torch.utils.data
 
 
-def int2bool(i):
-    i = int(i)
-    assert i == 0 or i == 1
-    return i == 1
-
-
-def str2activation(activation):
-    activations = {
-        'relu': torch.nn.ReLU,
-        'tanh': torch.nn.Tanh
-    }
-    return activations[activation]
+def arg2bool(val):
+    if isinstance(val, bool):
+        return val
+    
+    elif isinstance(val, str):
+        if val == "true":
+            return True
+        
+        if val == "false":
+            return False
+    
+    val = int(val)
+    assert val == 0 or val == 1
+    return val == 1
 
 
 def set_seed(seed):
@@ -27,8 +29,8 @@ def set_seed(seed):
     np.random.seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = False
+    torch.backends.cudnn.benchmark = True
     torch.manual_seed(seed)
 
 

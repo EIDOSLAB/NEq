@@ -1,10 +1,14 @@
 from experiments.templates.learning import LearningExperiment
 
 
+# TODO is this needed?
+
 class ClassificationLearningExperiment(LearningExperiment):
+    
     def __init__(self, opts):
         super().__init__(opts)
-        self.project_name = 'classification-learning'
+        self.project_name = 'NEq'
+        self.tag = "classification-base"
     
     def get_experiment_key(self):
         raise NotImplementedError
@@ -13,6 +17,9 @@ class ClassificationLearningExperiment(LearningExperiment):
         raise NotImplementedError
     
     def load_optimizer(self):
+        raise NotImplementedError
+    
+    def load_scheduler(self):
         raise NotImplementedError
     
     def compute_loss(self, outputs, minibatch):

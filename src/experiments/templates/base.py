@@ -4,14 +4,15 @@ Provides common interface for loading data,
 models, loss functions and fitting/testing
 """
 from abc import ABCMeta, abstractmethod
-from argparse import ArgumentParser
-from typing import Dict
+
+import torch.cuda
 
 
 class ExperimentBase(metaclass=ABCMeta):
     def __init__(self, opts):
         self.opts = opts
-        self.device = getattr(opts, 'device', 'cpu')
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.opts.device = self.device
         print('Creating experiment', self.__class__.__name__)
         print('Options: (')
         for k, v in vars(opts).items():
@@ -19,19 +20,19 @@ class ExperimentBase(metaclass=ABCMeta):
         print(')')
     
     @staticmethod
-    def load_config(parser, defaults):
+    def load_config(parser):
         raise NotImplementedError
     
     @abstractmethod
     def initialize(self):
-        pass
-    
-    @abstractmethod
-    def load_data(self):
         raise NotImplementedError
     
     @abstractmethod
     def run(self):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def load_data(self):
         raise NotImplementedError
 
 

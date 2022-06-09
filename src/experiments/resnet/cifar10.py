@@ -5,40 +5,51 @@ import torch
 import wandb
 from torch import nn
 
-from experiments.templates.cifar10 import CIFAR10_Freeze_Bprop_Base
+from experiments.templates.resnet import CIFAR10_Freeze_Bprop_Base
 from neq import Hook
-from utils import int2bool
+from utils import arg2bool
 
 
 class CIFAR10_Freeze_Bprop_Random_Constant(CIFAR10_Freeze_Bprop_Base):
     __help__ = "Implementation of Freezing Back-propagation experiments on CIFAR-10 (random, constant)"
     
+    def __init__(self, opts):
+        super().__init__(opts)
+        self.tag = "freeze-bprop-random-constant"
+    
     @staticmethod
     def load_config(parser):
         CIFAR10_Freeze_Bprop_Base.load_config(parser)
         parser.add_argument('--p', type=float, help='gradient masking probability', default=0)
     
-    def __compute_masks(self, epoch):
-        # TODO here we have to create a random tensor
-        #  with int(m.weight.shape[0] * p) elements in range [0, m.weight.shape[0]]
-        if epoch > 1:
+    def run_epoch(self, epoch):
+        super().run_epoch(epoch)
+        self.log_masks(epoch)
+    
+    def compute_masks(self, epoch):
+        super().compute_masks(epoch)
+        if epoch > self.opts.warmup:
             for n, m in self.model.named_modules():
                 if isinstance(m, (nn.Linear, nn.Conv2d)):
-                    self.masks[n] = 0
+                    self.masks[n] = torch.Tensor(m.weight.shape[0]).uniform_() > self.opts.p
 
 
 class CIFAR10_Freeze_Bprop_Bottomk_Constant(CIFAR10_Freeze_Bprop_Base):
     __help__ = "Implementation of Freezing Back-propagation experiments on CIFAR-10 (bottomk, constant)"
     
+    def __init__(self, opts):
+        super().__init__(opts)
+        self.tag = "freeze-bprop-bottomk-constant"
+    
     @staticmethod
     def load_config(parser):
         CIFAR10_Freeze_Bprop_Base.load_config(parser)
         parser.add_argument('--p', type=float, help='gradient masking probability', default=0)
     
-    def __compute_masks(self, epoch):
+    def compute_masks(self, epoch):
         # TODO here we have to create a tensor
         #  with the indices of the int(m.weight.shape[0] * p) smallest parameters
-        if epoch > 1:
+        if epoch > self.opts.warmup:
             for n, m in self.model.named_modules():
                 if isinstance(m, (nn.Linear, nn.Conv2d)):
                     self.masks[n] = 0
@@ -57,7 +68,7 @@ class CIFAR10_NEq(CIFAR10_Freeze_Bprop_Base):
         CIFAR10_Freeze_Bprop_Base.load_config(parser)
         parser.add_argument('--eps', type=float, help='NEq eps', default=0)
         parser.add_argument('--mu', type=float, help='NEq velocity mu', default=0.5)
-        parser.add_argument('--log-distributions', type=int2bool, help='log phi, delta phi, and velocity', default=0)
+        parser.add_argument('--log-distributions', type=arg2bool, help='log phi, delta phi, and velocity', default=0)
     
     def run(self):
         self.__attach_hooks()
@@ -87,7 +98,6 @@ class CIFAR10_NEq(CIFAR10_Freeze_Bprop_Base):
             self.hooks[h].active = active
     
     def __compute_masks(self, epoch):
-        neq_neurons = {}
         distributions = {"phi": {}, "delta-phi": {}, "velocity": {}}
         
         for k in self.hooks:
@@ -96,7 +106,7 @@ class CIFAR10_NEq(CIFAR10_Freeze_Bprop_Base):
                 delta_phi = deepcopy(self.hooks[k].get_delta_of_delta().detach().clone())
             velocity = deepcopy(self.hooks[k].get_velocity().detach().clone())
             
-            if epoch > 1:
+            if epoch > self.opts.warmup:
                 self.masks[k] = torch.where(torch.abs(velocity) < self.opts.eps)[0]
             else:
                 self.masks[k] = torch.tensor([], device=velocity.device)
@@ -116,13 +126,6 @@ class CIFAR10_NEq(CIFAR10_Freeze_Bprop_Base):
             
             self.hooks[k].update_velocity()
             self.hooks[k].update_delta_buffer()
-            
             self.hooks[k].reset()
-            
-            neq_neurons[f"{k}"] = (self.masks[k].shape[0] / velocity.shape[0]) * 100
         
-        wandb.log({
-            "neq-neurons": neq_neurons,
-            "total":       (sum(neq_neurons.values()) / self.total_neurons) * 100
-        }, step=epoch)
         wandb.log(distributions, step=epoch)
