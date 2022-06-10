@@ -98,7 +98,7 @@ class CIFAR10_Freeze_Bprop_Base(CIFAR10_Base):
         
         for n, m in self.model.named_modules():
             if isinstance(m, (nn.Linear, nn.Conv2d)):
-                neq_neurons[f"{n}"] = (self.masks[n].shape[0] / m.weight.shape[0]) * 100
+                neq_neurons[n] = (self.masks[n].shape[0] / m.weight.shape[0]) * 100
         
         wandb.log({
             "neq-neurons": neq_neurons,

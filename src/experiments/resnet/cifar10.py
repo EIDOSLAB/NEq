@@ -23,15 +23,22 @@ class CIFAR10_Freeze_Bprop_Random_Constant(CIFAR10_Freeze_Bprop_Base):
         parser.add_argument('--p', type=float, help='gradient masking probability', default=0)
     
     def run_epoch(self, epoch):
+        self.compute_masks(epoch)
         super().run_epoch(epoch)
         self.log_masks(epoch)
     
     def compute_masks(self, epoch):
         super().compute_masks(epoch)
-        if epoch > self.opts.warmup:
-            for n, m in self.model.named_modules():
-                if isinstance(m, (nn.Linear, nn.Conv2d)):
-                    self.masks[n] = torch.Tensor(m.weight.shape[0]).uniform_() > self.opts.p
+        for n, m in self.model.named_modules():
+            if isinstance(m, (nn.Linear, nn.Conv2d)):
+                if epoch > self.opts.warmup:
+                    self.masks[n] = torch.where(
+                        torch.empty(m.weight.shape[0], device=m.weight.device).uniform_() > 1 - self.opts.p
+                    )[0]
+                else:
+                    self.masks[n] = torch.tensor([], device=m.weight.device)
+                
+                self.masks[n] = self.masks[n].to(torch.long)
 
 
 class CIFAR10_Freeze_Bprop_Bottomk_Constant(CIFAR10_Freeze_Bprop_Base):

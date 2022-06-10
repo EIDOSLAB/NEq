@@ -86,8 +86,7 @@ class LearningExperiment(ExperimentBase):
             # TODO add SummaryWriter
             wandb.init(config=self.opts,
                        project=self.project_name,
-                       tags=[self.tag],
-                       sync_tensorboard=True)
+                       tags=[self.tag])
         
         # Load the dataloaders
         with FileLock(self.__class__.__name__):
