@@ -96,9 +96,8 @@ class LearningExperiment(ExperimentBase):
         print('Optimizer:', self.optimizer)
         print('Scheduler:', self.scheduler)
         
-        print('\n---- Model details:')
+        print('\n---- Model details ----')
         print(self.model)
-        print('----')
     
     def run(self):
         for epoch in range(1, self.opts.epochs + 1):
@@ -208,7 +207,7 @@ class LearningExperiment(ExperimentBase):
             self.scheduler.step()
     
     def run_epoch(self, epoch):
-        print(f'\n ----- Epoch {epoch} -----')
+        print(f'\n----- Epoch {epoch} -----')
         
         wandb.log({"epochs": epoch}, step=epoch)
         

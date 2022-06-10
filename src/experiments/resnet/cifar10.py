@@ -22,11 +22,6 @@ class CIFAR10_Freeze_Bprop_Random_Constant(CIFAR10_Freeze_Bprop_Base):
         CIFAR10_Freeze_Bprop_Base.load_config(parser)
         parser.add_argument('--p', type=float, help='gradient masking probability', default=0)
     
-    def run_epoch(self, epoch):
-        self.compute_masks(epoch)
-        super().run_epoch(epoch)
-        self.log_masks(epoch)
-    
     def compute_masks(self, epoch):
         super().compute_masks(epoch)
         for n, m in self.model.named_modules():
@@ -39,27 +34,6 @@ class CIFAR10_Freeze_Bprop_Random_Constant(CIFAR10_Freeze_Bprop_Base):
                     self.masks[n] = torch.tensor([], device=m.weight.device)
                 
                 self.masks[n] = self.masks[n].to(torch.long)
-
-
-class CIFAR10_Freeze_Bprop_Bottomk_Constant(CIFAR10_Freeze_Bprop_Base):
-    __help__ = "Implementation of Freezing Back-propagation experiments on CIFAR-10 (bottomk, constant)"
-    
-    def __init__(self, opts):
-        super().__init__(opts)
-        self.tag = "freeze-bprop-bottomk-constant"
-    
-    @staticmethod
-    def load_config(parser):
-        CIFAR10_Freeze_Bprop_Base.load_config(parser)
-        parser.add_argument('--p', type=float, help='gradient masking probability', default=0)
-    
-    def compute_masks(self, epoch):
-        # TODO here we have to create a tensor
-        #  with the indices of the int(m.weight.shape[0] * p) smallest parameters
-        if epoch > self.opts.warmup:
-            for n, m in self.model.named_modules():
-                if isinstance(m, (nn.Linear, nn.Conv2d)):
-                    self.masks[n] = 0
 
 
 class CIFAR10_NEq(CIFAR10_Freeze_Bprop_Base):

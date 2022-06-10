@@ -87,6 +87,11 @@ class CIFAR10_Freeze_Bprop_Base(CIFAR10_Base):
             return MaskedAdam(named_params[1], names=named_params[0], lr=self.opts.lr,
                               weight_decay=self.opts.weight_decay)
     
+    def run_epoch(self, epoch):
+        self.compute_masks(epoch)
+        super().run_epoch(epoch)
+        self.log_masks(epoch)
+    
     def update_masks(self):
         self.masks = {}
         
