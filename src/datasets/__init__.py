@@ -40,7 +40,7 @@ def load_imagenet(config, shuffle):
 
 def _get_dataloaders(config, train_dataset, validation_dataset, test_dataset, transform, shuffle):
     train_dataset = MapDataset(train_dataset, transform[0])
-    validation_dataset = MapDataset(validation_dataset, transform[0])
+    validation_dataset = MapDataset(validation_dataset, transform[1])
     
     train_loader = DataLoader(dataset=train_dataset, batch_size=config.batch_size,
                               shuffle=shuffle, num_workers=config.num_workers,

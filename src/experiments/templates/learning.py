@@ -182,7 +182,7 @@ class LearningExperiment(ExperimentBase):
             for k, v in losses.items():
                 running_losses[k].update(v.item(), len(minibatch[0]))
             
-            if (idx + 1) % 10 == 0:
+            if (idx + 1) % 1 == 0:
                 print(f'{name} :: [ step {idx + 1}/{len(dataloader)} ] :: ',
                       ' '.join([f'running {n}={l.value()}' for n, l in running_losses.items()]))
         

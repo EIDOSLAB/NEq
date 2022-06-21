@@ -9,11 +9,6 @@ COPY requirements.txt /src/requirements.txt
 RUN chmod 775 /src
 RUN chown -R :1337 /src
 
-# Do the same with the data folder
-RUN mkdir /data
-RUN chmod 775 /data
-RUN chown -R :1337 /data
-
 RUN mkdir /scratch
 RUN chmod 775 /scratch
 RUN chown -R :1337 /scratch

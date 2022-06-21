@@ -27,7 +27,7 @@ class CIFAR10_Base(ClassificationLearningExperiment):
         return {"ce": cross_entropy(outputs, minibatch[1])}
     
     def init_meters(self):
-        return {"accuracy.top1": Accuracy(topk=(1,), config=self.opts)}
+        return {"accuracy.top1": Accuracy(topk=(1,), device=self.device)}
     
     def update_meters(self, meters, outputs, minibatch):
         meters["accuracy.top1"].update(outputs, minibatch[1])
@@ -87,10 +87,14 @@ class CIFAR10_Freeze_Bprop_Base(CIFAR10_Base):
             return MaskedAdam(named_params[1], names=named_params[0], lr=self.opts.lr,
                               weight_decay=self.opts.weight_decay)
     
-    def run_epoch(self, epoch):
-        self.compute_masks(epoch)
+    def run_epoch(self, epoch, compute_mask=True):
+        if compute_mask:
+            self.compute_masks(epoch)
+            
         super().run_epoch(epoch)
-        self.log_masks(epoch)
+        
+        if compute_mask:
+            self.log_masks(epoch)
     
     def update_masks(self):
         self.masks = {}
@@ -102,8 +106,9 @@ class CIFAR10_Freeze_Bprop_Base(CIFAR10_Base):
         neq_neurons = {}
         
         for n, m in self.model.named_modules():
-            if isinstance(m, (nn.Linear, nn.Conv2d)):
-                neq_neurons[n] = (self.masks[n].shape[0] / m.weight.shape[0]) * 100
+            if isinstance(m, (nn.Linear, nn.Conv2d, nn.BatchNorm2d)):
+                if n in self.masks:
+                    neq_neurons[n] = (self.masks[n].shape[0] / m.weight.shape[0]) * 100
         
         wandb.log({
             "neq-neurons": neq_neurons,
