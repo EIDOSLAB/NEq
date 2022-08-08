@@ -51,11 +51,11 @@ def plot_frozen(runs, layer_ops):
         plt.plot(mean.index.values, y, label=f"$\mu_{{opt}}={mu}$", alpha=0.7, linewidth=1)
         plt.fill_between(x=mean.index.values, y1=y1, y2=y2, alpha=0.1)
 
-    plt.xlabel("Epochs", fontsize=20)
-    plt.ylabel("Bprop. FLOPs per iter.", fontsize=15)
+    plt.xlabel("Epochs")
+    plt.ylabel("Bprop. FLOPs per iter.")
 
-    plt.legend(ncol=1, fontsize=20)
-    plt.tick_params(axis='both', which='major', labelsize=15)
+    plt.legend(ncol=1)
+    plt.tick_params(axis='both', which='major')
     plt.tight_layout()
 
     plt.savefig("mu-optim-line.png", dpi=300)
