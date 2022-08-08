@@ -1,7 +1,7 @@
 from distutils.version import LooseVersion
 
-from thop.vision.basic_hooks import *
-from thop.rnn_hooks import *
+from plots.thop.vision.basic_hooks import *
+from plots.thop.rnn_hooks import *
 
 
 # logger = logging.getLogger(__name__)

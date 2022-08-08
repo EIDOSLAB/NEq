@@ -1,7 +1,5 @@
-import torch
 import numpy as np
-from onnx import numpy_helper
-from thop.vision.basic_hooks import zero_ops
+
 from .counter import (
     counter_matmul,
     counter_zero_ops,
@@ -66,9 +64,9 @@ def onnx_counter_conv(diction, node):
             # print(dim_dil)
     dim_input = diction[node.input[0]]
     output_size = np.append(
-        dim_input[0 : -np.array(dim_kernel).size - 1], dim_weight[0]
+        dim_input[0: -np.array(dim_kernel).size - 1], dim_weight[0]
     )
-    hw = np.array(dim_input[-np.array(dim_kernel).size :])
+    hw = np.array(dim_input[-np.array(dim_kernel).size:])
     for i in range(hw.size):
         hw[i] = int(
             (hw[i] + 2 * dim_pad[i] - dim_dil[i] * (dim_kernel[i] - 1) - 1)
@@ -232,15 +230,15 @@ def onnx_counter_averagepool(diction, node):
             dim_dil = attr.ints
             # print(dim_dil)
     dim_input = diction[node.input[0]]
-    hw = dim_input[-np.array(dim_kernel).size :]
+    hw = dim_input[-np.array(dim_kernel).size:]
     if dim_pad is not None:
         for i in range(hw.size):
             hw[i] = int((hw[i] + 2 * dim_pad[i] - dim_kernel[i]) / dim_stride[i] + 1)
-        output_size = np.append(dim_input[0 : -np.array(dim_kernel).size], hw)
+        output_size = np.append(dim_input[0: -np.array(dim_kernel).size], hw)
     else:
         for i in range(hw.size):
             hw[i] = int((hw[i] - dim_kernel[i]) / dim_stride[i] + 1)
-        output_size = np.append(dim_input[0 : -np.array(dim_kernel).size], hw)
+        output_size = np.append(dim_input[0: -np.array(dim_kernel).size], hw)
     # print(macs, output_size, output_name)
     return macs, output_size, output_name
 
@@ -287,15 +285,15 @@ def onnx_counter_maxpool(diction, node):
             dim_dil = attr.ints
             # print(dim_dil)
     dim_input = diction[node.input[0]]
-    hw = dim_input[-np.array(dim_kernel).size :]
+    hw = dim_input[-np.array(dim_kernel).size:]
     if dim_pad is not None:
         for i in range(hw.size):
             hw[i] = int((hw[i] + 2 * dim_pad[i] - dim_kernel[i]) / dim_stride[i] + 1)
-        output_size = np.append(dim_input[0 : -np.array(dim_kernel).size], hw)
+        output_size = np.append(dim_input[0: -np.array(dim_kernel).size], hw)
     else:
         for i in range(hw.size):
             hw[i] = int((hw[i] - dim_kernel[i]) / dim_stride[i] + 1)
-        output_size = np.append(dim_input[0 : -np.array(dim_kernel).size], hw)
+        output_size = np.append(dim_input[0: -np.array(dim_kernel).size], hw)
     # print(macs, output_size, output_name)
     return macs, output_size, output_name
 
@@ -331,27 +329,27 @@ def onnx_counter_clip(diction, node):
 
 
 onnx_operators = {
-    "MatMul": onnx_counter_matmul,
-    "Add": onnx_counter_add,
-    "Conv": onnx_counter_conv,
-    "Mul": onnx_counter_mul,
-    "Constant": onnx_counter_constant,
-    "BatchNormalization": onnx_counter_bn,
-    "Relu": onnx_counter_relu,
-    "ReduceMean": onnx_counter_reducemean,
-    "Sub": onnx_counter_sub,
-    "Pow": onnx_counter_pow,
-    "Sqrt": onnx_counter_sqrt,
-    "Div": onnx_counter_div,
+    "MatMul":                onnx_counter_matmul,
+    "Add":                   onnx_counter_add,
+    "Conv":                  onnx_counter_conv,
+    "Mul":                   onnx_counter_mul,
+    "Constant":              onnx_counter_constant,
+    "BatchNormalization":    onnx_counter_bn,
+    "Relu":                  onnx_counter_relu,
+    "ReduceMean":            onnx_counter_reducemean,
+    "Sub":                   onnx_counter_sub,
+    "Pow":                   onnx_counter_pow,
+    "Sqrt":                  onnx_counter_sqrt,
+    "Div":                   onnx_counter_div,
     "InstanceNormalization": onnx_counter_instance,
-    "Softmax": onnx_counter_softmax,
-    "Pad": onnx_counter_pad,
-    "AveragePool": onnx_counter_averagepool,
-    "MaxPool": onnx_counter_maxpool,
-    "Flatten": onnx_counter_flatten,
-    "Gemm": onnx_counter_gemm,
-    "GlobalAveragePool": onnx_counter_globalaveragepool,
-    "Concat": onnx_counter_concat,
-    "Clip": onnx_counter_clip,
-    None: None,
+    "Softmax":               onnx_counter_softmax,
+    "Pad":                   onnx_counter_pad,
+    "AveragePool":           onnx_counter_averagepool,
+    "MaxPool":               onnx_counter_maxpool,
+    "Flatten":               onnx_counter_flatten,
+    "Gemm":                  onnx_counter_gemm,
+    "GlobalAveragePool":     onnx_counter_globalaveragepool,
+    "Concat":                onnx_counter_concat,
+    "Clip":                  onnx_counter_clip,
+    None:                    None,
 }
