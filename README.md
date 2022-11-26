@@ -1,4 +1,4 @@
-[![paper](https://img.shields.io/badge/BMVC-paper-blue)](https://openreview.net/pdf?id=LGDfv0U7MJR)
+[![paper](https://img.shields.io/badge/NeurIPS-paper-blue)](https://openreview.net/pdf?id=LGDfv0U7MJR)
 
 # To update or not to update? Neurons at equilibrium in deep models - NeurIPS 2022
 
