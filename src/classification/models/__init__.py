@@ -1,18 +1,12 @@
 from torchvision.models import resnet18
 
-from .lenet import *
 from .resnet import *
-
-
-
 
 
 def get_model(config):
     print(f"Initialize model {config.arch}")
     
-    if config.arch == "lenet5":
-        model = LeNet5()
-    elif config.arch == "resnet32-cifar":
+    if config.arch == "resnet32-cifar":
         model = resnet32()
     elif config.arch == "resnet18-imagenet":
         model = resnet18(False)

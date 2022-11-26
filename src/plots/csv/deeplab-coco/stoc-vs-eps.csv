@@ -1,5 +1,0 @@
-"Name","Tags","ID","arch","dataset","batch_size","val_size","epochs","lr","weight_decay","optim","topk","delta_of_delta","velocity","velocity_mu","eps","param_norm"
-"proud-river-170","","1d0apq0y","deeplabv3_resnet50","coco","32","0.005","30","0.02","0.0001","sgd","0.8","0","true","0.5","-",""
-"gentle-brook-164","","2264gugy","deeplabv3_resnet50","coco","32","0.001","30","0.02","0.0001","sgd","-","0","true","0.5","0.02",""
-"polar-durian-171","","2fhpx2n9","deeplabv3_resnet50","coco","32","0.005","30","0.02","0.0001","sgd","0.5","0","true","0.5","-",""
-"fresh-aardvark-163","","34c7u7r3","deeplabv3_resnet50","coco","32","0.005","30","0.02","0.0001","sgd","0.7403","0","true","0.5","-",""
