@@ -4,6 +4,8 @@
 
 Official repository for NEq as presented at the NeurIPS 2022 conference.
 
+![teaser](nomenclature.png)
+
 ## Requirements
 
 Python==3.9 \
