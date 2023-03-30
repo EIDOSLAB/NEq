@@ -255,7 +255,7 @@ def evaluated_mask(config, k, reduced_activation_delta, topk, grad_mask):
     else:
         # How many neurons to select as "to freeze" as percentage of the total number of neurons
         topk = int((1 - topk) * reduced_activation_delta.shape[0])
-        mask = torch.topk(reduced_activation_delta, k=topk, largest=False, sorted=True)[1]
+        mask = torch.topk(torch.abs(reduced_activation_delta), k=topk, largest=False, sorted=True)[1]
     
     if config.pinning and k in grad_mask:
         grad_mask[k] = torch.cat([grad_mask[k].long(), mask.long()]).unique()
